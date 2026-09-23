@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/api_client.dart';
 
 class IAChatbotScreen extends StatefulWidget {
   const IAChatbotScreen({super.key});
@@ -10,26 +11,36 @@ class _IAChatbotScreenState extends State<IAChatbotScreen> {
   final Color burgundyColor = Color(0xFF800020);
   final TextEditingController _messageController = TextEditingController();
 
-  // Liste de messages VIDE au démarrage
   final List<Map<String, dynamic>> _messages = [];
 
-  void _sendMessage() {
-    if (_messageController.text.isEmpty) return;
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+    _messageController.clear();
     setState(() {
-      _messages.add({"text": _messageController.text, "isMe": true});
-      _messageController.clear();
+      _messages.add({"text": text, "isMe": true});
+      _messages.add({"text": "", "isMe": false, "isLoading": true});
     });
 
-    // Ici, vous connecterez plus tard votre API d'IA (ex: OpenAI ou Gemini)
-    // Simulation d'une réponse IA
-    Future.delayed(Duration(seconds: 1), () {
-      setState(() {
-        _messages.add({
-          "text":
-              "Je traite votre demande... Comment puis-je vous aider davantage ?",
-          "isMe": false,
-        });
-      });
+    try {
+      final reply = await ApiClient.sendChatMessage(text);
+      _replaceLoading(reply);
+    } on ApiException catch (error) {
+      _replaceLoading('Erreur : ${error.message}');
+    } catch (_) {
+      _replaceLoading("Une erreur est survenue. Réessayez plus tard.");
+    }
+  }
+
+  void _replaceLoading(String reply) {
+    if (!mounted) return;
+    setState(() {
+      final index = _messages.indexWhere((m) => m["isLoading"] == true);
+      if (index != -1) {
+        _messages[index] = {"text": reply, "isMe": false};
+      } else {
+        _messages.add({"text": reply, "isMe": false});
+      }
     });
   }
 
@@ -119,6 +130,7 @@ class _IAChatbotScreenState extends State<IAChatbotScreen> {
 
   Widget _buildChatBubble(Map<String, dynamic> message) {
     bool isMe = message["isMe"];
+    final isLoading = message["isLoading"] == true;
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -131,10 +143,26 @@ class _IAChatbotScreenState extends State<IAChatbotScreen> {
           color: isMe ? burgundyColor : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(15),
         ),
-        child: Text(
-          message["text"],
-          style: TextStyle(color: isMe ? Colors.white : Colors.black87),
-        ),
+        child: isLoading
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    "Mamacare AI réfléchit...",
+                    style: TextStyle(color: Colors.grey.shade700),
+                  ),
+                ],
+              )
+            : Text(
+                message["text"],
+                style: TextStyle(color: isMe ? Colors.white : Colors.black87),
+              ),
       ),
     );
   }

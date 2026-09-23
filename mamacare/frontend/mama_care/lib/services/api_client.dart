@@ -34,6 +34,11 @@ class ApiClient {
     _token = null;
   }
 
+  static Future<String> sendChatMessage(String message) async {
+    final response = await _post('/api/chat/', {'message': message});
+    return (response['reply'] as String?) ?? 'Aucune réponse de l\'assistant.';
+  }
+
   static Future<Map<String, dynamic>> register({
     required String email,
     required String password,

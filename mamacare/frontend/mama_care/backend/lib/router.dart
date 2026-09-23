@@ -8,6 +8,7 @@ import 'package:backend/routes/patient.dart' as patient;
 import 'package:backend/routes/doctor.dart' as doctor;
 import 'package:backend/routes/admin.dart' as admin;
 import 'package:backend/routes/notifications.dart' as notifications;
+import 'package:backend/routes/chat.dart' as chat;
 
 Router buildRouter() {
   final router = Router();
@@ -33,6 +34,7 @@ Router buildRouter() {
   router.mount('/api/doctor/', doctor.router.call);
   router.mount('/api/admin/', admin.router.call);
   router.mount('/api/notifications/', notifications.router.call);
+  router.mount('/api/chat/', chat.router.call);
 
   return router;
 }
