@@ -49,6 +49,11 @@ void main(List<String> args) async {
   final router = Router();
 
   router.get(
+      '/',
+      (Request req) => Response.ok('{"status":"MamaCare API is running"}',
+          headers: {'content-type': 'application/json'}));
+
+  router.get(
       '/health',
       (Request req) => Response.ok('{"status":"API is running"}',
           headers: {'content-type': 'application/json'}));
