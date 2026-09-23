@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mama_care/patiente/profil_config.dart';
 import 'package:mama_care/services/api_client.dart';
+import '../shared/app_theme.dart';
 
 class RegisterPatiente extends StatefulWidget {
   const RegisterPatiente({super.key});
@@ -23,7 +24,7 @@ class _RegisterPatienteState extends State<RegisterPatiente> {
   bool? _isAlreadyFollowed;
   bool _isLoading = false;
 
-  final Color burgundyColor = Color(0xFF800020);
+  final Color burgundyColor = AppColors.burgundy;
 
   @override
   Widget build(BuildContext context) {

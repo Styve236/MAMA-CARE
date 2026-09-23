@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/api_client.dart';
+import 'shared/app_theme.dart';
 
 // IMPORTS DES ÉCRANS DE DESTINATION
 import 'package:mama_care/patiente/dashboard.dart';
@@ -17,11 +18,11 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   bool _isObscure = true;
   bool _isLoading = false;
-  final _emailController = TextEditingController(text: "test@mamacare.com");
-  final _passwordController = TextEditingController(text: "123456");
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
-  // Couleur Bordeaux officielle de Mamacare
-  final Color burgundyColor = const Color(0xFF800020);
+  // Couleur Bordeaux officielle de Mamacare (source unique : AppColors)
+  final Color burgundyColor = AppColors.burgundy;
 
   @override
   void dispose() {

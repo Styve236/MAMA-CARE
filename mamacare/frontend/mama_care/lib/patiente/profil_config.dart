@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mama_care/patiente/dashboard.dart';
+import '../shared/app_theme.dart';
 
 class ProfilConfig extends StatefulWidget {
   const ProfilConfig({super.key});
@@ -8,7 +9,7 @@ class ProfilConfig extends StatefulWidget {
 }
 
 class _ProfilConfigState extends State<ProfilConfig> {
-  final Color burgundyColor = Color(0xFF800020);
+  final Color burgundyColor = AppColors.burgundy;
 
   // Contrôleurs et variables d'état
   DateTime? _dueDate;

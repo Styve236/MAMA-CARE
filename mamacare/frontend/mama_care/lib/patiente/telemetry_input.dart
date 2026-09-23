@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
+import '../shared/app_theme.dart';
 
 class TelemetryInput extends StatefulWidget {
   const TelemetryInput({super.key});
@@ -8,7 +9,7 @@ class TelemetryInput extends StatefulWidget {
 }
 
 class _TelemetryInputState extends State<TelemetryInput> {
-  final Color burgundyColor = Color(0xFF800020);
+  final Color burgundyColor = AppColors.burgundy;
 
   // Contrôleurs pour récupérer les saisies
   final _systoleController = TextEditingController();

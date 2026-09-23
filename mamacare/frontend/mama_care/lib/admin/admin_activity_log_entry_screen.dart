@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
+import '../shared/app_theme.dart';
 
 class AdminActivityLogEntry {
   final String id;
@@ -32,7 +33,7 @@ class AdminActivityLogScreen extends StatefulWidget {
 }
 
 class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
   static const Color lightBurgundy = Color(0xFFF8EDF0);
   static const Color pageBackground = Color(0xFFFCF9FA);
   static const Color softBorder = Color(0xFFF0E7E9);

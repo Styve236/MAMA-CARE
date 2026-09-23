@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'services/api_client.dart';
+import 'shared/app_theme.dart';
 
 // --- ÉCRAN D'ACCUEIL COMMUN ---
 
@@ -60,6 +61,7 @@ class MamaCareApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'MamaCare',
+      theme: AppTheme.light(),
       initialRoute: '/',
 
       routes: {

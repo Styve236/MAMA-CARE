@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
+import '../shared/app_theme.dart';
 import 'doctor_conversation_screen.dart';
 
 class DoctorMessagesList extends StatefulWidget {
@@ -16,7 +17,7 @@ class DoctorMessagesList extends StatefulWidget {
 }
 
 class _DoctorMessagesListState extends State<DoctorMessagesList> {
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _threads = [];
   bool _loading = true;
@@ -264,7 +265,7 @@ class _UnreadBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF800020),
+        color: AppColors.burgundy,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(

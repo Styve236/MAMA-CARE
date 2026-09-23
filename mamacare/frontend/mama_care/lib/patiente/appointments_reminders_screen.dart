@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
+import '../shared/app_theme.dart';
 
 final List<String> _weekdays = const [
   'Lundi',
@@ -65,7 +66,7 @@ class AppointmentsRemindersScreen extends StatefulWidget {
 
 class _AppointmentsRemindersScreenState
     extends State<AppointmentsRemindersScreen> {
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
   List<Map<String, String>> _appointments = [];
   List<Map<String, dynamic>> _reminders = [];
   bool _loading = true;

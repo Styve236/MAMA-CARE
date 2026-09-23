@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
+import '../shared/app_theme.dart';
 
 class AdminGlobalStatisticsScreen extends StatefulWidget {
   const AdminGlobalStatisticsScreen({super.key});
@@ -11,7 +12,7 @@ class AdminGlobalStatisticsScreen extends StatefulWidget {
 }
 
 class _AdminGlobalStatisticsScreenState extends State<AdminGlobalStatisticsScreen> {
-  static const burgundy = Color(0xFF800020);
+  static const burgundy = AppColors.burgundy;
   static const background = Color(0xFFFCF9FA);
   Map<String, dynamic>? _stats;
   String? _error;

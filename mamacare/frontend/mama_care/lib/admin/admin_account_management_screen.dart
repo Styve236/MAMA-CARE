@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import '../shared/app_theme.dart';
 
 class AdminAccountManagementScreen extends StatelessWidget {
 
   const AdminAccountManagementScreen({super.key});
 
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
 
   static const Color lightBurgundy = Color(0xFFF8EDF0);
 

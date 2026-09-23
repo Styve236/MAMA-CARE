@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'shared/app_theme.dart';
 import 'package:mama_care/login_screen.dart'; // Remplace par le chemin exact de ton écran de connexion universel
 
 class WelcomeScreen extends StatefulWidget {
@@ -11,7 +12,7 @@ class WelcomeScreen extends StatefulWidget {
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
   // Couleur bordeaux officielle MamaCare
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
   Timer? _redirectTimer;
 
   @override

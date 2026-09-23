@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
+import '../shared/app_theme.dart';
 import '../shared/chat_bubble.dart';
 
 class DoctorMessaging extends StatefulWidget {
@@ -22,7 +23,7 @@ class DoctorMessaging extends StatefulWidget {
 }
 
 class _DoctorMessagingState extends State<DoctorMessaging> {
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<Map<String, dynamic>> _messages = <Map<String, dynamic>>[];

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+import '../shared/app_theme.dart';
 
 class IAChatbotScreen extends StatefulWidget {
   const IAChatbotScreen({super.key});
@@ -8,7 +9,7 @@ class IAChatbotScreen extends StatefulWidget {
 }
 
 class _IAChatbotScreenState extends State<IAChatbotScreen> {
-  final Color burgundyColor = Color(0xFF800020);
+  final Color burgundyColor = AppColors.burgundy;
   final TextEditingController _messageController = TextEditingController();
 
   final List<Map<String, dynamic>> _messages = [];

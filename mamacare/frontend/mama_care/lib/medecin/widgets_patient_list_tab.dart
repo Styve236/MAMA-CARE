@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../shared/app_theme.dart';
 
 class PatientsListTab extends StatelessWidget {
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
 
   final List<Map<String, dynamic>> patients;
   final void Function(Map<String, dynamic> patient) onSelect;

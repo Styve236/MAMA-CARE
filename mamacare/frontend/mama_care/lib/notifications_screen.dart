@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'services/api_client.dart';
+import 'shared/app_theme.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -12,7 +13,7 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  static const burgundy = Color(0xFF800020);
+  static const burgundy = AppColors.burgundy;
   List<Map<String, dynamic>> _notifications = [];
   bool _loading = true;
   String? _error;

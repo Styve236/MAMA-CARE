@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
+import '../shared/app_theme.dart';
 
 enum AdminDoctorStatus { active, pending, disabled }
 
@@ -139,7 +140,7 @@ class AdminDoctorAccountsScreen extends StatefulWidget {
 }
 
 class _AdminDoctorAccountsScreenState extends State<AdminDoctorAccountsScreen> {
-  static const burgundy = Color(0xFF800020);
+  static const burgundy = AppColors.burgundy;
   static const background = Color(0xFFFCF9FA);
   static const lightBurgundy = Color(0xFFF8EDF0);
 

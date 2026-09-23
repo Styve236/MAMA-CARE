@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
+import '../shared/app_theme.dart';
 
 class DoctorPatienteDetail extends StatefulWidget {
   final String? patientId;
@@ -18,7 +19,7 @@ class DoctorPatienteDetail extends StatefulWidget {
 }
 
 class _DoctorPatienteDetailState extends State<DoctorPatienteDetail> {
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
   Map<String, dynamic>? _data;
   bool _loading = true;
   String? _error;

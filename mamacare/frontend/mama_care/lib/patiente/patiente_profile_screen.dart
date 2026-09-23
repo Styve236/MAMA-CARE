@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+import '../shared/app_theme.dart';
 
 class PatienteProfileScreen extends StatefulWidget {
   final Map<String, dynamic>? patienteData;
@@ -11,7 +12,7 @@ class PatienteProfileScreen extends StatefulWidget {
 }
 
 class _PatienteProfileScreenState extends State<PatienteProfileScreen> {
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
   static const Color lightBurgundy = Color(0xFFF9E8EC);
 
   bool _loading = true;

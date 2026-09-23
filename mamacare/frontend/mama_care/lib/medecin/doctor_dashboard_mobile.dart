@@ -8,6 +8,7 @@ import 'package:mama_care/medecin/doctor_alerts_center.dart';
 import 'package:mama_care/medecin/doctor_messages_list.dart';
 import 'package:mama_care/medecin/doctor_profile_screen.dart';
 import 'package:mama_care/medecin/widgets_patient_list_tab.dart';
+import '../shared/app_theme.dart';
 
 class DoctorDashboardMobile extends StatefulWidget {
   const DoctorDashboardMobile({super.key});
@@ -17,7 +18,7 @@ class DoctorDashboardMobile extends StatefulWidget {
 }
 
 class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
   int _currentIndex = 0;
   List<Map<String, dynamic>> _patients = [];
   List<Map<String, dynamic>> _alerts = [];

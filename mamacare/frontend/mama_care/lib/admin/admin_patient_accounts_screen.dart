@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+import '../shared/app_theme.dart';
 
 enum AdminPatientStatus { pending, active, suspended, disabled }
 
@@ -27,7 +28,7 @@ class AdminPatientAccountsScreen extends StatefulWidget {
 
 class _AdminPatientAccountsScreenState
     extends State<AdminPatientAccountsScreen> {
-  static const burgundy = Color(0xFF800020);
+  static const burgundy = AppColors.burgundy;
   static const background = Color(0xFFFCF9FA);
   static const lightBurgundy = Color(0xFFF8EDF0);
 

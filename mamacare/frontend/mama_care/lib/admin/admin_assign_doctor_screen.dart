@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+import '../shared/app_theme.dart';
 
 class AdminPatientOption {
   final String id;
@@ -61,7 +62,7 @@ class AdminAssignDoctorScreen extends StatefulWidget {
 }
 
 class _AdminAssignDoctorScreenState extends State<AdminAssignDoctorScreen> {
-  static const Color burgundy = Color(0xFF800020);
+  static const Color burgundy = AppColors.burgundy;
   static const Color background = Color(0xFFFCF9FA);
   static const Color lightBurgundy = Color(0xFFF8EDF0);
   static const Color borderColor = Color(0xFFE9DFE2);
