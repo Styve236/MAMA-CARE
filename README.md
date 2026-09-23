@@ -1,6 +1,6 @@
 # 🏥 MamaCare - Plateforme Complète de Suivi Maternal
 
-**Bienvenue sur MamaCare!** Une application mobile complète pour le suivi de la santé maternelle.
+**MamaCare** : application mobile de suivi de la santé maternelle avec trois rôles (patiente, médecin, admin), messagerie, alertes médicales par IA, rendez-vous et rappels.
 
 ---
 
@@ -8,446 +8,214 @@
 
 ```
 MAMACAREV1/
-├── 📱 mamacare/frontend/mama_care/   # Application Flutter (Patiente, Médecin, Admin)
+├── mamacare/frontend/mama_care/           # Application Flutter (patiente, médecin, admin)
 │   ├── lib/
-│   │   ├── patiente/                 # 📌 Module Patiente
-│   │   ├── medecin/                  # 👨‍⚕️ Module Médecin
-│   │   ├── admin/                    # 🔐 Module Admin
-│   │   └── main.dart
+│   │   ├── admin/                         # 🔐 Module Admin (comptes, attribution, statistiques, logs)
+│   │   ├── medecin/                       # 👨‍⚕️ Module Médecin (dashboard, alertes, patientes, messagerie)
+│   │   ├── patiente/                      # 👩‍⚕️ Module Patiente (dashboard, télémesure, messagerie, rappels, chat IA)
+│   │   ├── services/api_client.dart       # Client HTTP de l'API (tous les endpoints)
+│   │   ├── shared/                        # Widgets réutilisables (ChatBubble, ...)
+│   │   └── main.dart                      # Point d'entrée + routes
+│   ├── backend/                           # 🖥️ Backend Dart (shelf) — API REST
+│   │   ├── bin/server.dart                # Point d'entrée du serveur
+│   │   ├── bin/migrate.dart               # Applique les migrations SQL
+│   │   ├── lib/router.dart                # Montage des routes /api/*
+│   │   ├── lib/routes/                    # auth, patient, doctor, admin, notifications, chat
+│   │   ├── lib/utils/                     # gemini.dart (IA), jwt, hash, env, json_safe
+│   │   ├── lib/config/database.dart       # Connexion PostgreSQL (pooler Supabase)
+│   │   ├── lib/models/schema.sql          # Schéma complet (référence)
+│   │   ├── migrations/                    # 001..004 migrations versionnées
+│   │   └── pubspec.yaml
+│   ├── vercel.json                        # Config déploiement frontend (Vercel)
+│   ├── start_app.ps1 / start_backend.ps1  # Scripts de lancement
 │   └── pubspec.yaml
-│
-├── 🖥️ backend/                         # Backend Dart (shelf) — implémentation serveur en Dart
-│   ├── bin/
-│   │   └── server.dart                 # Point d'entrée (shelf)
-│   ├── lib/
-│   │   ├── config/                   # Configuration BD (PostgreSQL)
-│   │   ├── controllers/              # Logique des endpoints
-│   │   ├── models/                   # Modèles et schéma SQL
-│   │   ├── routes/                   # Routes API (auth, patient, doctor, admin)
-│   │   └── utils/                    # Utilitaires (JWT, hash, etc.)
-│   ├── pubspec.yaml
-│   ├── .env.example
-│   ├── README.md
-│   ├── API_DOCUMENTATION.md
-│   └── MamaCare_API_Postman.json
-│
-├── 📄 RAPPORT_ANALYSE.md             # Analyse complète du projet
-├── 📚 INTEGRATION_GUIDE.md           # Guide d'intégration Frontend/Backend
-└── 📖 README.md                      # Ce fichier
-
+├── README.md                              # Ce fichier
+├── FILES_INDEX.md                         # Index actualisé des fichiers du projet
+└── RAPPORT_ANALYSE.md                     # Analyse du projet (document historique)
 ```
+
+> Les anciens backends `backend_legacy/` et `server/` (remplacés par `backend/`) ont été supprimés.
 
 ---
 
-## 🚀 DÉMARRAGE RAPIDE
+## 🚀 Démarrage Rapide
 
-### Option 1: Démarrage Local (Recommandé pour Développement)
+### 1️⃣ Prérequis
+- **Dart SDK** + **Flutter SDK** ([flutter.dev](https://flutter.dev/get-started/install))
+- Une base **PostgreSQL** (Supabase recommandée : connexion via le pooler)
+- Clé **Gemini API** (optionnelle mais nécessaire pour l'IA / le chatbot)
 
-#### 1️⃣ Prérequis
-- **Dart SDK** (>=2.18) ([télécharger](https://dart.dev/get-dart))
-- **PostgreSQL** 12+ ([télécharger](https://www.postgresql.org/download/))
-- **Flutter** SDK ([télécharger](https://flutter.dev/docs/get-started/install))
-
-#### 2️⃣ Configuration Backend
+### 2️⃣ Base de données (Supabase)
+1. Créer le projet Supabase et récupérer la chaîne de connexion pooler :
+   `postgres.unwgionfobojsvrefcsn@aws-0-eu-central-1.pooler.supabase.com:5432/postgres`
+2. Appliquer les migrations :
 ```bash
-# Naviguer au dossier backend
-cd backend
-
-# Installer dépendances Dart
-dart pub get
-
-# Copier et éditer variables d'environnement
-copy .env.example .env      # (Windows)
-# or
-cp .env.example .env        # (macOS / Linux)
-
-# Éditer .env avec vos paramètres:
-# - DB_HOST=localhost
-# - DB_PORT=5432
-# - DB_NAME=mamacare_db
-# - DB_USER=postgres
-# - DB_PASSWORD=votre_mot_de_passe
-# - JWT_SECRET=votre_secret
+cd mamacare/frontend/mama_care/backend
+# Définir les variables d'environnement (voir ci-dessous) puis :
+dart run bin/migrate.dart
 ```
 
-#### 3️⃣ Créer la Base de Données
-```bash
-# Via psql
-psql -U postgres
-CREATE DATABASE mamacare_db;
-\q
+### 3️⃣ Configurer le backend
+```env
+# mamacare/frontend/mama_care/backend/.env
+DB_HOST=aws-0-eu-central-1.pooler.supabase.com
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=postgres.<project_ref>
+DB_PASSWORD=<mot_de_passe_supabase>
+JWT_SECRET=<secret_jwt>
+PORT=3000
+GEMINI_API_KEY=<clé_gemini>          # IA : analyse pré-alerte + chatbot
 ```
 
-#### 4️⃣ Démarrer le Backend
+### 4️⃣ Démarrer le backend
 ```bash
-# Depuis le dossier backend
+cd mamacare/frontend/mama_care/backend
 dart run bin/server.dart
-
-# Résultat attendu:
-# ✓ MamaCare Dart Backend running on http://localhost:3000
-# ✓ Database schema initialized successfully
+# ✓ API sur http://localhost:3000  (health : GET /health)
 ```
 
-#### 5️⃣ Démarrer le Frontend
+### 5️⃣ Démarrer le frontend
 ```bash
-# Dans un nouveau terminal, depuis le dossier frontend
 cd mamacare/frontend/mama_care
 flutter pub get
 flutter run
-
-# Sélectionner le dispositif cible (Android, iOS, Web, etc.)
 ```
 
-### Option 2: Démarrage avec Docker (si disponible)
-
-Si un Dockerfile et/ou docker-compose.yml est présent dans le dossier `backend`, il est possible de conteneuriser l'application :
-
+Pour pointer le frontend vers un backend distant (ex. Render) :
 ```bash
-# Depuis le dossier backend
-# (si docker-compose.yml fourni)
-docker-compose up -d
-
-# API disponible sur: http://localhost:3000
-# PostgreSQL sur: localhost:5432
-
-# Arrêter
-docker-compose down
+flutter run --dart-define=API_BASE_URL=https://<backend-render>.onrender.com
 ```
-
-Consulter `backend/README.md` pour des instructions spécifiques à la conteneurisation (le backend Dart peut nécessiter un Dockerfile personnalisé).
 
 ---
 
-## 📚 DOCUMENTATION
+## 🔑 Comptes de démonstration
 
-### 1. **RAPPORT_ANALYSE.md** - Le Guide Complet
-- ✅ Analyse détaillée de l'application Flutter
-- ✅ Architecture du backend créé
-- ✅ Schéma de la base de données
-- ✅ Endpoints API (28 endpoints)
-- ✅ Recommandations futures
-
-**👉 Lire ce fichier en PREMIER pour comprendre le projet complet**
-
-### 2. **backend/README.md** - Guide Installation Backend
-- Installation et configuration rapide
-- Structure du projet backend
-- Dépendances et prérequis
-- Troubleshooting
-
-### 3. **backend/API_DOCUMENTATION.md** - Référence Complète API
-- Tous les endpoints avec exemples
-- Schéma de la base de données
-- Authentification JWT
-- Gestion erreurs
-
-### 4. **INTEGRATION_GUIDE.md** - Guide Frontend/Backend
-- Implémentation ApiService en Flutter
-- Configuration de la communication API
-- Exemples de code
-- Tests avec Postman
+| Rôle | Email | Mot de passe |
+|------|-------|--------------|
+| Admin | `admin@mamacare.com` | `admin123` |
+| Patiente | Inscription via l'écran d'inscription | — |
+| Médecin | Créé par l'admin | — |
 
 ---
 
-## 🔑 Rôles et Accès
+## 🔌 Endpoints API
 
-### 👩‍⚕️ Patiente
-- Gestion du profil et profil de grossesse
-- Enregistrement des données de santé (télémetrie)
-- Consultation des statistiques de santé
-- Messagerie avec médecin assigné
-- Gestion des rendez-vous
-- Chat avec IA pour conseils
+En-tête d'auth requis : `Authorization: Bearer <token>`
 
-### 👨‍⚕️ Médecin
-- Consultation de la liste des patientes assignées
-- Accès aux données de santé des patientes
-- Système d'alertes pour anomalies santé
-- Messagerie avec les patientes
-- Gestion des rendez-vous
+### Authentification (`/api/auth/`)
+```
+POST   /api/auth/register     - Inscription (patiente)
+POST   /api/auth/login        - Connexion
+GET    /api/auth/verify       - Vérification du token
+```
 
-### 🔐 Admin
-- Gestion des comptes (patientes & médecins)
-- Validation et modération des comptes
-- Assignment médecin-patiente
-- Statistiques système globales
-- Logs d'activité audit
+### Patiente (`/api/patient/`)
+```
+GET    /profile               - Profil
+PATCH  /profile               - Modifier le profil
+GET    /telemetry             - Historique des mesures
+POST   /telemetry             - Enregistrer une mesure (+ analyse IA pré-alerte)
+GET    /appointments          - Rendez-vous
+POST   /appointments          - Réserver un rendez-vous
+GET    /messages              - Conversation avec le médecin (doctor + messages)
+POST   /messages              - Envoyer un message (médecin affecté requis)
+GET    /reminders             - Liste des rappels
+POST   /reminders             - Créer un rappel
+PATCH  /reminders/<id>        - Marquer un rappel fait
+DELETE /reminders/<id>        - Supprimer un rappel
+```
+
+### Médecin (`/api/doctor/`)
+```
+GET    /profile               - Profil
+PATCH  /profile               - Modifier le profil
+GET    /patients              - Patientes affectées
+GET    /patients/<id>         - Détail patiente + télémesure + alerte
+GET    /alerts                - Alertes IA
+GET    /alerts/unread-count   - Nombre d'alertes non lues
+PATCH  /alerts/<id>/read      - Marquer une alerte lue
+GET    /stats                 - Statistiques (patientes, alertes, messages)
+GET    /messages              - Threads de messagerie (avec non-lus)
+GET    /messages/<patientUserId> - Conversation complète
+POST   /messages              - Envoyer un message à une patiente
+POST   /messages/<patientUserId>/read - Marquer la conversation lue
+```
+
+### Admin (`/api/admin/`)
+```
+GET    /stats                          - Statistiques globales
+GET    /doctors                        - Liste des médecins (avec charge)
+POST   /doctors                        - Créer un médecin
+PATCH  /doctors/<id>/status            - Activer / suspendre / désactiver
+GET    /patients                       - Liste des patientes
+PATCH  /patients/<id>/status           - Activer / suspendre / désactiver
+PATCH  /patients/<userId>/assign-doctor - Attribuer un médecin à une patiente ({doctorId|null})
+GET    /activity-logs                  - Journal d'audit
+```
+
+### Notifications (`/api/notifications/`) & Chat IA (`/api/chat/`)
+```
+GET    /api/notifications/          - Notifications
+GET    /api/notifications/unread-count
+POST   /api/notifications/<id>/read
+POST   /api/notifications/read-all
+POST   /api/chat/                   - Chatbot IA ({message}) → {reply}
+```
 
 ---
 
-## 🔌 API Endpoints
+## 🤖 Intelligence Artificielle
 
-### Authentification
-```
-POST   /api/auth/register         - Inscription
-POST   /api/auth/login            - Connexion
-GET    /api/auth/verify           - Vérification token
-POST   /api/auth/logout           - Déconnexion
-```
-
-### Patiente
-```
-GET    /api/patient/profile       - Profil
-PUT    /api/patient/profile       - Modifier profil
-POST   /api/patient/telemetry     - Enregistrer santé
-GET    /api/patient/telemetry     - Historique santé
-GET    /api/patient/appointments  - Rendez-vous
-POST   /api/patient/appointments  - Réserver rendez-vous
-```
-
-### Médecin
-```
-GET    /api/doctor/profile        - Profil
-GET    /api/doctor/patients       - Mes patientes
-GET    /api/doctor/appointments   - Mes rendez-vous
-GET    /api/doctor/alerts         - Mes alertes
-```
-
-### Admin
-```
-GET    /api/admin/stats           - Statistiques
-GET    /api/admin/patients        - Toutes patientes
-GET    /api/admin/doctors         - Tous médecins
-POST   /api/admin/assign-doctor   - Assigner médecin
-```
-
-**👉 Voir `backend/API_DOCUMENTATION.md` pour la liste complète (28 endpoints)**
+- **Analyse pré-alerte** : `POST /api/patient/telemetry` envoie les constantes vitales à **Gemini** ; si l'analyse est `critical`, une alerte est créée et transmise au médecin (champ `details` JSONB).
+- **Chatbot** : `POST /api/chat/` avec un suivi grossesse contextuel.
+- **Modèles Gemini** : chaîne de repli automatique (`gemini-3.6-flash` → `gemini-3.5-flash` → lite → preview) en cas de quota 429 / saturation 503.
+- **Important** : `GEMINI_API_KEY` n'est pas commitée. Sans clé, le chatbot refuse et les alertes IA sont `null`.
 
 ---
 
-## 🧪 Tester l'API
+## 🗄️ Base de Données (tables)
 
-### Avec Postman
-1. Importer `backend/MamaCare_API_Postman.json` dans Postman
-2. Configurer variable `base_url`: `http://localhost:3000`
-3. Utiliser les collections pré-configurées pour tester les endpoints
-
-### Avec cURL
-```bash
-# Tester santé du serveur
-curl http://localhost:3000/health
-
-# Enregistrer un utilisateur
-curl -X POST http://localhost:3000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@mamacare.com",
-    "password": "password123",
-    "firstName": "Jane",
-    "lastName": "Doe",
-    "role": "patiente"
-  }'
-
-# Se connecter
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@mamacare.com",
-    "password": "password123"
-  }'
-```
+`users`, `doctors`, `patients`, `telemetry`, `appointments`, `messages`, `alerts` (+`details` JSONB), `patient_reminders`, `notifications`, `chatbot_conversations`, `activity_logs`, `statistics`, `admin_actions`, plus `schema_migrations` (suivi des migrations).
 
 ---
 
 ## 🔐 Sécurité
 
-✅ **Authentification JWT** - Tokens sécurisés valables 7 jours  
-✅ **Hachage Mot de Passe** - Bcrypt avec 10 salts  
-✅ **Contrôle d'Accès** - RBAC (Role-Based Access Control)  
-✅ **Validation Entrée** - Schemas Joi  
-✅ **Headers Sécurité** - Helmet.js  
-✅ **CORS Configuré** - Pour communication client-serveur  
-✅ **SQL Injection Protection** - Requêtes paramétrées  
+- JWT (7 jours) avec rôles (`patiente` / `medecin` / `admin`) et contrôles par route.
+- Mots de passe hachés (`HashService`).
+- Requêtes PostgreSQL paramétrées (anti-injection SQL).
+- Clés et secrets uniquement via variables d'environnement.
 
 ---
 
-## 📊 Base de Données
+## 🚀 Déploiement
 
-**12 Tables PostgreSQL:**
-1. `users` - Authentification (3 rôles)
-2. `patients` - Données patientes
-3. `doctors` - Données médecins
-4. `telemetry` - Historique santé
-5. `appointments` - Rendez-vous
-6. `messages` - Messagerie
-7. `alerts` - Alertes médecins
-8. `activity_logs` - Audit trail
-9. `chatbot_conversations` - IA chat
-10. `statistics` - Statistiques cache
-11. `admin_actions` - Actions admin
-12. `notifications` - Notifications
+### Backend → Render
+1. Service Web pointant vers `mamacare/frontend/mama_care/backend` (build `dart pub get` + start `dart run bin/server.dart`).
+2. Variables d'environnement : `DB_*`, `JWT_SECRET`, `PORT`, **`GEMINI_API_KEY`** (sinon l'IA n'est pas active).
+3. Sans `GEMINI_API_KEY`, l'app affiche « l'assistant IA n'est pas encore configuré ».
+
+### Frontend → Vercel
+1. Framework Flutter ; `vercel.json` positionne `buildCommand: flutter build web` et `outputDirectory: build/web`.
+2. Dans Vercel, définir la variable d'environnement **`API_BASE_URL`** = URL du backend Render.
+3. L'app lit `API_BASE_URL` via `String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:3000')`.
 
 ---
 
-## ⚙️ Configuration
+## 🧪 Tests & Qualité
 
-### Variables d'Environnement Requises
-```env
-# Serveur
-PORT=3000
-NODE_ENV=development
+```bash
+# Backend
+cd mamacare/frontend/mama_care/backend && dart analyze
 
-# Base de Données
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=mamacare_db
-DB_USER=postgres
-DB_PASSWORD=votre_password
-
-# JWT
-JWT_SECRET=votre_secret_tres_secret
-JWT_EXPIRES_IN=7d
-
-# Optional: IA Chatbot
-IA_CHATBOT_API_KEY=votre_api_openai_key
-
-# Optional: Notifications Email
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=votre_email@gmail.com
-SMTP_PASSWORD=votre_app_password
+# Frontend
+cd mamacare/frontend/mama_care && flutter analyze lib
 ```
 
----
-
-## 📱 Intégration Frontend
-
-### Créer ApiService en Flutter
-```dart
-// lib/services/api_service.dart
-class ApiService {
-  static const String baseUrl = 'http://localhost:3000/api';
-  
-  Future<Map<String, dynamic>> login({
-    required String email,
-    required String password,
-  }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
-    );
-    return jsonDecode(response.body);
-  }
-}
-```
-
-**👉 Voir `INTEGRATION_GUIDE.md` pour guide complet d'intégration**
+- Les scénarios de bout en bout (inscription → attribution → messagerie → RDV → rappels → alerte IA) sont testés manuellement via l'API.
 
 ---
 
-## 🐛 Troubleshooting
-
-| Problème | Solution |
-|----------|----------|
-| Connection refused | Vérifier que PostgreSQL et backend sont en cours d'exécution |
-| CORS error | Configurer les origines dans `src/server.js` |
-| JWT token invalid | Vérifier JWT_SECRET dans .env et format du token |
-| Port 3000 already in use | Changer PORT dans .env ou tuer le processus sur le port |
-| Database not found | Créer la base: `createdb mamacare_db` |
-
----
-
-## 📈 Prochaines Étapes
-
-### Phase 1: Développement ✅ COMPLÉTÉE
-- [x] Application Flutter créée
-- [x] Backend Node.js/Express créé
-- [x] Base de données PostgreSQL configurée
-- [x] 28 endpoints API implémentés
-- [x] Authentification JWT en place
-- [x] Documentation complète
-
-### Phase 2: Intégration (À faire)
-- [ ] Connecter le frontend au backend API
-- [ ] Tester tous les endpoints
-- [ ] Implémenter gestion erreurs complète
-- [ ] Ajouter notifications push Firebase
-- [ ] Tests unitaires & intégration
-
-### Phase 3: Production (À faire)
-- [ ] Déployer sur serveur/cloud
-- [ ] Configurer domaine SSL
-- [ ] Mettre en place backups BD
-- [ ] Monitoring et logging
-- [ ] Performance tuning
-
-### Phase 4: Amélioration (À faire)
-- [ ] Système de paiement
-- [ ] Intégration wearables
-- [ ] Predictive analytics ML
-- [ ] Graphiques en temps réel WebSocket
-- [ ] Export rapports PDF
-
----
-
-## 📞 Support & Ressources
-
-- **Documentation API**: `backend/API_DOCUMENTATION.md`
-- **Guide Installation**: `backend/README.md`
-- **Guide Intégration**: `INTEGRATION_GUIDE.md`
-- **Analyse Complète**: `RAPPORT_ANALYSE.md`
-- **Collection Postman**: `backend/MamaCare_API_Postman.json`
-
----
-
-## 📝 Notes Importantes
-
-### Pour Développeurs
-- Backend sur port 3000
-- PostgreSQL sur port 5432
-- Flutter app sur port 8080 (web)
-- Utiliser `npm run dev` pour développement avec auto-reload
-- Variables d'env dans fichier `.env`
-
-### Pour Production
-- Changer JWT_SECRET à une valeur forte
-- Utiliser HTTPS/SSL
-- Configurer backup PostgreSQL
-- Monitorer les logs
-- Configurer alertes d'erreurs
-- Rate limiting pour API
-
-### Données de Test
-```
-Email: test@mamacare.com
-Password: 123456
-Role: admin (modifiable au login)
-```
-
----
-
-## 📊 Statistiques du Projet
-
-- **Temps de développement**: ~4 heures
-- **Lignes de code**: ~20,000
-- **Fichiers créés**: 25+
-- **Endpoints API**: 28
-- **Tables BD**: 12
-- **Pages documentation**: 40+
-
----
-
-## ✅ Checklist de Configuration
-
-Avant de démarrer:
-- [ ] Node.js 16+ installé
-- [ ] PostgreSQL 12+ installé
-- [ ] Flutter SDK installé (optionnel)
-- [ ] Repository cloned/téléchargé
-- [ ] Variables .env configurées
-- [ ] Base de données créée
-- [ ] npm install exécuté
-
----
-
-## 🎉 Bon Développement!
-
-Vous avez maintenant une plateforme complète de suivi maternal.  
-**Besoin d'aide?** Consultez la documentation ou contactez l'équipe développement.
-
----
-
-**Version**: 1.0.0  
-**Dernière mise à jour**: 31 Août 2024  
-**Statut**: ✅ Prêt pour développement et test
+**Version**: 2.0.0
+**Statut**: ✅ Fonctionnel (backend Dart, IA Gemini, messagerie, rappels, attribution admin)
