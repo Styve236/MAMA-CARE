@@ -2,17 +2,12 @@ import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
-import 'package:shelf_router/shelf_router.dart';
 import 'package:shelf_cors_headers/shelf_cors_headers.dart';
 import 'package:backend/utils/env.dart';
+import 'package:backend/router.dart';
 import 'package:logging/logging.dart';
 
 import 'package:backend/config/database.dart';
-import 'package:backend/routes/auth.dart' as auth;
-import 'package:backend/routes/patient.dart' as patient;
-import 'package:backend/routes/doctor.dart' as doctor;
-import 'package:backend/routes/admin.dart' as admin;
-import 'package:backend/routes/notifications.dart' as notifications;
 
 Future<HttpServer> _serveOnAvailablePort(
   Handler handler,
@@ -46,24 +41,7 @@ void main(List<String> args) async {
   final db = Database();
   await db.connect();
 
-  final router = Router();
-
-  router.get(
-      '/',
-      (Request req) => Response.ok('{"status":"MamaCare API is running"}',
-          headers: {'content-type': 'application/json'}));
-
-  router.get(
-      '/health',
-      (Request req) => Response.ok('{"status":"API is running"}',
-          headers: {'content-type': 'application/json'}));
-
-  // Mount routes
-  router.mount('/api/auth/', auth.router.call);
-  router.mount('/api/patient/', patient.router.call);
-  router.mount('/api/doctor/', doctor.router.call);
-  router.mount('/api/admin/', admin.router.call);
-  router.mount('/api/notifications/', notifications.router.call);
+  final router = buildRouter();
 
   final handler = const Pipeline()
       .addMiddleware(logRequests())
