@@ -5,6 +5,7 @@ import 'package:shelf_router/shelf_router.dart';
 
 import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
+import 'package:backend/utils/json_safe.dart';
 
 Map<String, dynamic>? _user(Request request) {
   final authorization = request.headers['authorization'];
@@ -14,7 +15,7 @@ Map<String, dynamic>? _user(Request request) {
 
 Response _json(int status, Object body) => Response(
       status,
-      body: jsonEncode(body),
+      body: jsonEncode(jsonSafe(body)),
       headers: {'content-type': 'application/json'},
     );
 

@@ -3,6 +3,7 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
+import 'package:backend/utils/json_safe.dart';
 
 Map<String, dynamic>? _extractUser(Request req) {
   final auth = req.headers['authorization'];
@@ -25,7 +26,7 @@ final _patientRouter = Router()
     final res = await db.query('SELECT p.*, u.email, u.first_name, u.last_name, u.phone FROM patients p JOIN users u ON p.user_id = u.id WHERE p.user_id = @id', substitutionValues: {'id': int.parse(uid!)});
     await db.close();
     if (res.isEmpty) return Response.notFound(jsonEncode({'message': 'Patient profile not found'}), headers: {'content-type': 'application/json'});
-    return Response.ok(jsonEncode(res.first.toColumnMap()), headers: {'content-type': 'application/json'});
+    return Response.ok(jsonEncode(jsonSafe(res.first.toColumnMap())), headers: {'content-type': 'application/json'});
   })
   ..get('/telemetry', (Request req) async {
     final user = _extractUser(req);
@@ -34,7 +35,7 @@ final _patientRouter = Router()
     await db.connect();
     try {
       final rows = await db.query('''SELECT t.* FROM telemetry t JOIN patients p ON p.id = t.patient_id WHERE p.user_id = @uid ORDER BY t.recorded_at DESC''', substitutionValues: {'uid': int.parse(user['id'].toString())});
-      return Response.ok(jsonEncode(rows.map((row) => row.toColumnMap()).toList()), headers: {'content-type': 'application/json'});
+      return Response.ok(jsonEncode(rows.map((row) => jsonSafe(row.toColumnMap())).toList()), headers: {'content-type': 'application/json'});
     } finally {
       await db.close();
     }
@@ -46,7 +47,7 @@ final _patientRouter = Router()
     await db.connect();
     try {
       final rows = await db.query('''SELECT a.*, du.first_name AS doctor_first_name, du.last_name AS doctor_last_name FROM appointments a JOIN patients p ON p.id = a.patient_id JOIN doctors d ON d.id = a.doctor_id JOIN users du ON du.id = d.user_id WHERE p.user_id = @uid ORDER BY a.appointment_date''', substitutionValues: {'uid': int.parse(user['id'].toString())});
-      return Response.ok(jsonEncode(rows.map((row) => row.toColumnMap()).toList()), headers: {'content-type': 'application/json'});
+      return Response.ok(jsonEncode(rows.map((row) => jsonSafe(row.toColumnMap())).toList()), headers: {'content-type': 'application/json'});
     } finally {
       await db.close();
     }
@@ -78,7 +79,7 @@ final _patientRouter = Router()
       'n': body['notes']
     });
     await db.close();
-    return Response(201, body: jsonEncode({'telemetry': inserted.first.toColumnMap()}), headers: {'content-type': 'application/json'});
+    return Response(201, body: jsonEncode({'telemetry': jsonSafe(inserted.first.toColumnMap())}), headers: {'content-type': 'application/json'});
   });
 
 // Export named router

@@ -3,6 +3,7 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
+import 'package:backend/utils/json_safe.dart';
 
 Map<String, dynamic>? _extractUser(Request req) {
   final auth = req.headers['authorization'];
@@ -23,7 +24,7 @@ final _doctorRouter = Router()
     final res = await db.query('SELECT d.*, u.email, u.first_name, u.last_name, u.phone FROM doctors d JOIN users u ON d.user_id = u.id WHERE d.user_id = @id', substitutionValues: {'id': int.parse(uid!)});
     await db.close();
     if (res.isEmpty) return Response.notFound(jsonEncode({'message': 'Doctor profile not found'}), headers: {'content-type': 'application/json'});
-    return Response.ok(jsonEncode(res.first.toColumnMap()), headers: {'content-type': 'application/json'});
+    return Response.ok(jsonEncode(jsonSafe(res.first.toColumnMap())), headers: {'content-type': 'application/json'});
   })
   ..get('/patients', (Request req) async {
     final user = _extractUser(req);
@@ -36,7 +37,7 @@ final _doctorRouter = Router()
     final docId = docRes.first[0];
     final patients = await db.query('SELECT p.*, u.first_name, u.last_name, u.email FROM patients p JOIN users u ON p.user_id = u.id WHERE p.assigned_doctor_id = @d', substitutionValues: {'d': docId});
     await db.close();
-    return Response.ok(jsonEncode(patients.map((r) => r.toColumnMap()).toList()), headers: {'content-type': 'application/json'});
+    return Response.ok(jsonEncode(patients.map((r) => jsonSafe(r.toColumnMap())).toList()), headers: {'content-type': 'application/json'});
   });
 
 final router = _doctorRouter;

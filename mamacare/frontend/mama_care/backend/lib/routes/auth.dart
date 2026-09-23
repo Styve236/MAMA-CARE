@@ -5,6 +5,7 @@ import 'package:backend/config/database.dart';
 import 'package:backend/models/user.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/hash.dart';
+import 'package:backend/utils/json_safe.dart';
 
 final router = Router()
   ..post('/register', (Request req) async {
@@ -35,7 +36,7 @@ final router = Router()
     final token = jwt.sign({'id': newUser['id'], 'email': newUser['email'], 'role': newUser['role']});
 
     await db.close();
-    return Response(201, body: jsonEncode({'message': 'User registered', 'token': token, 'user': newUser}), headers: {'content-type': 'application/json'});
+    return Response(201, body: jsonEncode({'message': 'User registered', 'token': token, 'user': jsonSafe(newUser)}), headers: {'content-type': 'application/json'});
   })
   ..post('/login', (Request req) async {
     final body = jsonDecode(await req.readAsString());

@@ -5,6 +5,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/hash.dart';
+import 'package:backend/utils/json_safe.dart';
 import 'package:uuid/uuid.dart';
 
 Map<String, dynamic>? _extractUser(Request req) {
@@ -28,7 +29,7 @@ final _adminRouter = Router()
     final res = await db.query(
         'SELECT (SELECT COUNT(*) FROM users WHERE role = \'patiente\') as total_patients, (SELECT COUNT(*) FROM users WHERE role = \'medecin\') as total_doctors, (SELECT COUNT(*) FROM users) as total_users, (SELECT COUNT(*) FROM alerts WHERE is_read = FALSE) as total_alerts, (SELECT COUNT(*) FROM appointments) as total_appointments, (SELECT COUNT(*) FROM appointments WHERE status = \'completed\') as completed_appointments');
     await db.close();
-    return Response.ok(jsonEncode(res.first.toColumnMap()),
+    return Response.ok(jsonEncode(jsonSafe(res.first.toColumnMap())),
         headers: {'content-type': 'application/json'});
   })
   ..get('/doctors', (Request req) async {
@@ -54,7 +55,7 @@ final _adminRouter = Router()
         ORDER BY u.created_at DESC
       ''');
       return Response.ok(
-        jsonEncode(rows.map((row) => row.toColumnMap()).toList()),
+        jsonEncode(rows.map((row) => jsonSafe(row.toColumnMap())).toList()),
         headers: {'content-type': 'application/json'},
       );
     } finally {
@@ -112,7 +113,7 @@ final _adminRouter = Router()
           return Response.notFound(jsonEncode({'error': 'Médecin introuvable'}),
               headers: {'content-type': 'application/json'});
         }
-        return Response.ok(jsonEncode(updated),
+        return Response.ok(jsonEncode(jsonSafe(updated)),
             headers: {'content-type': 'application/json'});
       } finally {
         await db.close();
@@ -147,7 +148,7 @@ final _adminRouter = Router()
         ORDER BY l.created_at DESC
       ''');
       return Response.ok(
-          jsonEncode(rows.map((row) => row.toColumnMap()).toList()),
+          jsonEncode(rows.map((row) => jsonSafe(row.toColumnMap())).toList()),
           headers: {'content-type': 'application/json'});
     } finally {
       await db.close();
@@ -249,7 +250,7 @@ final _adminRouter = Router()
         });
 
         return Response(201,
-            body: jsonEncode(created),
+            body: jsonEncode(jsonSafe(created)),
             headers: {'content-type': 'application/json'});
       } finally {
         await db.close();
