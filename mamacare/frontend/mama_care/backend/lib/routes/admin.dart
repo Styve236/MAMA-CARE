@@ -364,6 +364,92 @@ final _adminRouter = Router()
           body: jsonEncode({'error': 'Impossible de créer le compte médecin'}),
           headers: {'content-type': 'application/json'});
     }
+  })
+  ..patch('/patients/<userId>/assign-doctor', (Request req, String userId) async {
+    try {
+      final admin = _extractUser(req);
+      if (admin == null || admin['role'] != 'admin') {
+        return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final adminId = int.tryParse('${admin['id']}');
+      if (adminId == null) {
+        return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final patientUserId = int.tryParse(userId);
+      if (patientUserId == null) {
+        return Response(400,
+            body: jsonEncode({'error': 'Identifiant invalide'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final body = jsonDecode(await req.readAsString());
+      if (body is! Map<String, dynamic>) {
+        return Response(400,
+            body: jsonEncode({'error': 'JSON invalide'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final doctorIdValue = body['doctorId'];
+      if (doctorIdValue != null && doctorIdValue is! int) {
+        return Response(400,
+            body: jsonEncode({'error': 'doctorId invalide'}),
+            headers: {'content-type': 'application/json'});
+      }
+
+      final db = Database();
+      await db.connect();
+      try {
+        if (doctorIdValue != null) {
+          final docRes = await db.query(
+              'SELECT id FROM doctors WHERE id = @id',
+              substitutionValues: {'id': doctorIdValue});
+          if (docRes.isEmpty) {
+            return Response(400,
+                body: jsonEncode({'error': 'Médecin introuvable'}),
+                headers: {'content-type': 'application/json'});
+          }
+        }
+        final updated = await db.connection.transaction((ctx) async {
+          final rows = await ctx.query('''UPDATE patients
+              SET assigned_doctor_id = @doctorId, updated_at = NOW()
+              WHERE user_id = @userId AND EXISTS
+              (SELECT 1 FROM users WHERE users.id = @userId AND users.role = 'patiente')
+              RETURNING id, user_id, assigned_doctor_id''',
+              substitutionValues: {
+                'doctorId': doctorIdValue,
+                'userId': patientUserId,
+              });
+          if (rows.isEmpty) return null;
+          await ctx.query('''INSERT INTO activity_logs
+              (user_id, action, resource_type, resource_id, details)
+              VALUES (@adminId, 'DOCTOR_ASSIGNMENT', 'patient', @userId, @details)''',
+              substitutionValues: {
+                'adminId': adminId,
+                'userId': patientUserId,
+                'details': 'doctor_id=${doctorIdValue ?? 'none'}',
+              });
+          return rows.first.toColumnMap();
+        });
+        if (updated == null) {
+          return Response.notFound(
+              jsonEncode({'error': 'Patiente introuvable'}),
+              headers: {'content-type': 'application/json'});
+        }
+        return Response.ok(jsonEncode(jsonSafe(updated)),
+            headers: {'content-type': 'application/json'});
+      } finally {
+        await db.close();
+      }
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant ou JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    } catch (error) {
+      developer.log('Erreur attribution médecin: $error', level: 1000);
+      return Response.internalServerError(
+          body: jsonEncode({'error': 'Impossible d\'attribuer le médecin'}),
+          headers: {'content-type': 'application/json'});
+    }
   });
 
 final router = _adminRouter;

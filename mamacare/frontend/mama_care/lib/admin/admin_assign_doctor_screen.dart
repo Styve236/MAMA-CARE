@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/api_client.dart';
 
 class AdminPatientOption {
   final String id;
@@ -41,6 +42,8 @@ class AdminAssignDoctorScreen extends StatefulWidget {
   final List<AdminPatientOption> patients;
   final List<AdminDoctorLoad> doctors;
   final ValueChanged<AdminAssignmentData>? onAssignmentConfirmed;
+  final String? initialPatientId;
+  final String? initialDoctorId;
 
   const AdminAssignDoctorScreen({
     super.key,
@@ -48,6 +51,8 @@ class AdminAssignDoctorScreen extends StatefulWidget {
     this.patients = const [],
     this.doctors = const [],
     this.onAssignmentConfirmed,
+    this.initialPatientId,
+    this.initialDoctorId,
   });
 
   @override
@@ -55,23 +60,96 @@ class AdminAssignDoctorScreen extends StatefulWidget {
       _AdminAssignDoctorScreenState();
 }
 
-class _AdminAssignDoctorScreenState
-    extends State<AdminAssignDoctorScreen> {
+class _AdminAssignDoctorScreenState extends State<AdminAssignDoctorScreen> {
   static const Color burgundy = Color(0xFF800020);
   static const Color background = Color(0xFFFCF9FA);
   static const Color lightBurgundy = Color(0xFFF8EDF0);
   static const Color borderColor = Color(0xFFE9DFE2);
 
+  List<AdminPatientOption> _patients = [];
+  List<AdminDoctorLoad> _doctors = [];
+  bool _loading = true;
+  String? _error;
+  bool _saving = false;
+
   AdminPatientOption? _selectedPatient;
   AdminDoctorLoad? _selectedDoctor;
 
   AdminDoctorLoad? get _recommendedDoctor {
-    if (widget.doctors.isEmpty) return null;
-
-    final sorted = [...widget.doctors]
+    if (_doctors.isEmpty) return null;
+    final sorted = [..._doctors]
       ..sort((a, b) => a.patientCount.compareTo(b.patientCount));
-
     return sorted.first;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _patients = List.from(widget.patients);
+    _doctors = List.from(widget.doctors);
+    if (_patients.isEmpty || _doctors.isEmpty) {
+      _load();
+    } else {
+      _loading = false;
+      _applyInitialSelection();
+    }
+  }
+
+  Future<void> _load() async {
+    try {
+      final patientRows = await ApiClient.adminPatients();
+      final doctorRows = await ApiClient.adminDoctors();
+      if (!mounted) return;
+      setState(() {
+        _patients = patientRows.map((json) {
+          final first = '${json['first_name'] ?? ''}'.trim();
+          final last = '${json['last_name'] ?? ''}'.trim();
+          final name = '$first $last'.trim();
+          return AdminPatientOption(
+            id: '${json['user_id'] ?? json['id'] ?? ''}',
+            displayName: name.isEmpty ? '${json['email'] ?? ''}' : name,
+            city: '',
+          );
+        }).toList();
+        _doctors = doctorRows.map((json) {
+          final first = '${json['first_name'] ?? ''}'.trim();
+          final last = '${json['last_name'] ?? ''}'.trim();
+          final specialization = '${json['specialization'] ?? ''}'.trim();
+          return AdminDoctorLoad(
+            id: '${json['doctor_id'] ?? json['id'] ?? ''}',
+            displayName:
+                'Dr $first $last${specialization.isEmpty ? '' : ' — $specialization'}'
+                    .trim(),
+            healthCenter: '${json['hospital_affiliation'] ?? ''}',
+            patientCount: (json['patient_count'] as num?)?.toInt() ?? 0,
+          );
+        }).toList();
+        _loading = false;
+        _error = null;
+        _applyInitialSelection();
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.message;
+      });
+    }
+  }
+
+  void _applyInitialSelection() {
+    if (widget.initialPatientId != null) {
+      final matches = _patients.where((p) => p.id == widget.initialPatientId);
+      if (matches.isNotEmpty) {
+        _selectedPatient = matches.first;
+        _selectedDoctor = _recommendedDoctor;
+        return;
+      }
+    }
+    if (_patients.isNotEmpty) {
+      _selectedPatient = _patients.first;
+      _selectedDoctor = _recommendedDoctor;
+    }
   }
 
   @override
@@ -103,6 +181,34 @@ class _AdminAssignDoctorScreenState
         builder: (context, constraints) {
           final horizontalPadding = constraints.maxWidth >= 850 ? 32.0 : 18.0;
 
+          if (_loading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (_error != null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _loading = true;
+                          _error = null;
+                        });
+                        _load();
+                      },
+                      child: const Text('Réessayer'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           return SingleChildScrollView(
             padding: EdgeInsets.symmetric(
               horizontal: horizontalPadding,
@@ -119,6 +225,10 @@ class _AdminAssignDoctorScreenState
                     _buildSectionTitle('Sélectionner la patiente'),
                     const SizedBox(height: 10),
                     _buildPatientSelector(),
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('Sélectionner le médecin'),
+                    const SizedBox(height: 10),
+                    _buildDoctorSelector(),
                     const SizedBox(height: 20),
                     _buildRuleCard(),
                     const SizedBox(height: 25),
@@ -207,7 +317,7 @@ class _AdminAssignDoctorScreenState
   }
 
   Widget _buildPatientSelector() {
-    final hasPatients = widget.patients.isNotEmpty;
+    final hasPatients = _patients.isNotEmpty;
 
     return DropdownButtonFormField<AdminPatientOption>(
       initialValue: _selectedPatient,
@@ -224,13 +334,38 @@ class _AdminAssignDoctorScreenState
               });
             }
           : null,
-      items: widget.patients.map((patient) {
+      items: _patients.map((patient) {
         return DropdownMenuItem<AdminPatientOption>(
           value: patient,
           child: Text(patient.displayName),
         );
       }).toList(),
       decoration: _inputDecoration(Icons.person_outline),
+    );
+  }
+
+  Widget _buildDoctorSelector() {
+    final hasDoctors = _doctors.isNotEmpty;
+
+    return DropdownButtonFormField<AdminDoctorLoad>(
+      initialValue: _selectedDoctor,
+      isExpanded: true,
+      hint: const Text(
+        'Sélectionner un médecin',
+        style: TextStyle(color: Colors.grey),
+      ),
+      onChanged: hasDoctors
+          ? (doctor) {
+              setState(() => _selectedDoctor = doctor);
+            }
+          : null,
+      items: _doctors.map((doctor) {
+        return DropdownMenuItem<AdminDoctorLoad>(
+          value: doctor,
+          child: Text(doctor.displayName),
+        );
+      }).toList(),
+      decoration: _inputDecoration(Icons.medical_services_outlined),
     );
   }
 
@@ -277,14 +412,18 @@ class _AdminAssignDoctorScreenState
   }
 
   Widget _buildDoctorLoads() {
-    if (widget.doctors.isEmpty) {
-      return Column(
-        children: List.generate(
-          3,
-          (_) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _buildEmptyDoctorCard(),
-          ),
+    if (_doctors.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor),
+        ),
+        child: const Text(
+          'Aucun médecin disponible.',
+          style: TextStyle(color: Colors.grey),
         ),
       );
     }
@@ -292,55 +431,13 @@ class _AdminAssignDoctorScreenState
     final recommended = _recommendedDoctor;
 
     return Column(
-      children: widget.doctors.map((doctor) {
+      children: _doctors.map((doctor) {
         final isRecommended = recommended?.id == doctor.id;
-
         return Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: _buildDoctorCard(doctor, isRecommended),
         );
       }).toList(),
-    );
-  }
-
-  Widget _buildEmptyDoctorCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor),
-      ),
-      child: const Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: lightBurgundy,
-            child: Icon(Icons.medical_services_outlined, color: burgundy),
-          ),
-          SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Médecin disponible',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Patientes suivies : —',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          Icon(Icons.chevron_right, color: Colors.grey),
-        ],
-      ),
     );
   }
 
@@ -382,6 +479,13 @@ class _AdminAssignDoctorScreenState
                   'Patientes suivies : ${doctor.patientCount}',
                   style: const TextStyle(color: Colors.grey),
                 ),
+                if (doctor.healthCenter.trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    doctor.healthCenter.trim(),
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
                 if (isRecommended) ...[
                   const SizedBox(height: 5),
                   const Text(
@@ -420,7 +524,7 @@ class _AdminAssignDoctorScreenState
             SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Les données apparaîtront après la sélection d’une patiente et la connexion des comptes.',
+                'Les données apparaîtront après la sélection d’une patiente et d’un médecin.',
                 style: TextStyle(color: Colors.grey, height: 1.4),
               ),
             ),
@@ -457,7 +561,8 @@ class _AdminAssignDoctorScreenState
   }
 
   Widget _buildConfirmButton() {
-    final enabled = _selectedPatient != null && _selectedDoctor != null;
+    final enabled =
+        _selectedPatient != null && _selectedDoctor != null && !_saving;
 
     return SizedBox(
       width: double.infinity,
@@ -471,32 +576,56 @@ class _AdminAssignDoctorScreenState
             borderRadius: BorderRadius.circular(13),
           ),
         ),
-        child: const Text(
-          'Confirmer l’attribution',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
+        child: _saving
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Text(
+                'Confirmer l’attribution',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
       ),
     );
   }
 
-  void _confirmAssignment() {
+  Future<void> _confirmAssignment() async {
     final patient = _selectedPatient;
     final doctor = _selectedDoctor;
-
     if (patient == null || doctor == null) return;
 
-    widget.onAssignmentConfirmed?.call(
-      AdminAssignmentData(
-        patientId: patient.id,
-        doctorId: doctor.id,
-      ),
-    );
+    final doctorId = int.tryParse(doctor.id);
+    if (doctorId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Médecin invalide.')),
+      );
+      return;
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Attribution prête à être enregistrée.'),
-      ),
-    );
+    setState(() => _saving = true);
+    try {
+      await ApiClient.adminAssignDoctor(userId: patient.id, doctorId: doctorId);
+      if (!mounted) return;
+      setState(() => _saving = false);
+      widget.onAssignmentConfirmed?.call(
+        AdminAssignmentData(patientId: patient.id, doctorId: doctor.id),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Attribution enregistrée.')),
+      );
+      Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
   }
 
   InputDecoration _inputDecoration(IconData icon) {

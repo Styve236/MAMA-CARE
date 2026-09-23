@@ -290,6 +290,345 @@ final _patientRouter = Router()
     } finally {
       await db.close();
     }
+  })
+  ..get('/messages', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final uid = int.parse(user['id'].toString());
+    final db = Database();
+    await db.connect();
+    try {
+      final doc = await db.query('''SELECT du.id AS user_id, du.first_name, du.last_name,
+          d.specialization
+          FROM patients p
+          LEFT JOIN doctors d ON d.id = p.assigned_doctor_id
+          LEFT JOIN users du ON du.id = d.user_id
+          WHERE p.user_id = @u''', substitutionValues: {'u': uid});
+      if (doc.isEmpty) {
+        return Response.notFound(jsonEncode({'message': 'Patient not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final doctorRow = doc.first.toColumnMap();
+      final doctorUserId = doctorRow['user_id'];
+      Map<String, dynamic>? doctor;
+      final messages = <Map<String, dynamic>>[];
+      if (doctorUserId != null) {
+        doctor = {
+          'id': doctorUserId,
+          'first_name': doctorRow['first_name'],
+          'last_name': doctorRow['last_name'],
+          'specialization': doctorRow['specialization'],
+        };
+        final rows = await db.query('''SELECT id, sender_id, recipient_id,
+            message_text, is_read, created_at
+            FROM messages
+            WHERE (sender_id = @u AND recipient_id = @du)
+               OR (sender_id = @du AND recipient_id = @u)
+            ORDER BY created_at ASC''', substitutionValues: {'u': uid, 'du': doctorUserId});
+        for (final row in rows) {
+          final m = jsonSafe(row.toColumnMap()) as Map<String, dynamic>;
+          m['is_from_me'] = '${m['sender_id']}' == '$uid';
+          messages.add(m);
+        }
+      }
+      return Response.ok(jsonEncode({'doctor': doctor, 'messages': messages}),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..post('/messages', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final uid = int.tryParse('${user['id']}');
+    if (uid == null) {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await req.readAsString());
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    if (decoded is! Map<String, dynamic>) {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final text = (decoded['message'] as String?)?.trim();
+    if (text == null || text.isEmpty) {
+      return Response(400,
+          body: jsonEncode({'error': 'Le message est vide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final doc = await db.query('''SELECT du.id AS user_id FROM patients p
+          JOIN doctors d ON d.id = p.assigned_doctor_id
+          JOIN users du ON du.id = d.user_id
+          WHERE p.user_id = @u''', substitutionValues: {'u': uid});
+      if (doc.isEmpty) {
+        return Response(409,
+            body: jsonEncode(
+                {'error': 'Aucun médecin n\'est encore affecté à votre profil'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final doctorUserId = doc.first[0];
+      final inserted = await db.query('''INSERT INTO messages
+          (sender_id, recipient_id, message_text)
+          VALUES (@s, @r, @t) RETURNING id, sender_id, recipient_id,
+          message_text, is_read, created_at''', substitutionValues: {
+        's': uid,
+        'r': doctorUserId,
+        't': text,
+      });
+      final message = jsonSafe(inserted.first.toColumnMap())
+          as Map<String, dynamic>;
+      message['is_from_me'] = true;
+      return Response(201,
+          body: jsonEncode({'message': message}),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..get('/reminders', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final uid = int.parse(user['id'].toString());
+    final db = Database();
+    await db.connect();
+    try {
+      final rows = await db.query('''SELECT r.* FROM patient_reminders r
+          JOIN patients p ON p.id = r.patient_id
+          WHERE p.user_id = @u ORDER BY r.reminder_date''',
+          substitutionValues: {'u': uid});
+      return Response.ok(jsonEncode(
+          rows.map((r) => jsonSafe(r.toColumnMap())).toList()),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..post('/reminders', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final uid = int.tryParse('${user['id']}');
+    if (uid == null) {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await req.readAsString());
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    if (decoded is! Map<String, dynamic>) {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final title = (decoded['title'] as String?)?.trim();
+    final dateString = decoded['reminderDate'] as String?;
+    if (title == null || title.isEmpty || dateString == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Titre et date du rappel requis'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final parsedDate = DateTime.tryParse(dateString);
+    if (parsedDate == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Date invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final patient = await db.query(
+          'SELECT id FROM patients WHERE user_id = @u',
+          substitutionValues: {'u': uid});
+      if (patient.isEmpty) {
+        return Response.notFound(
+            jsonEncode({'message': 'Patient not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final inserted = await db.query('''INSERT INTO patient_reminders
+          (patient_id, title, reminder_date)
+          VALUES (@p, @t, @d) RETURNING *''', substitutionValues: {
+        'p': patient.first[0],
+        't': title,
+        'd': parsedDate.toUtc(),
+      });
+      return Response(201,
+          body: jsonEncode(jsonSafe(inserted.first.toColumnMap())),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..patch('/reminders/<id>', (Request req, String id) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final uid = int.parse(user['id'].toString());
+    final reminderId = int.tryParse(id);
+    if (reminderId == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await req.readAsString());
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    if (decoded is! Map<String, dynamic>) {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final isDone = decoded['isDone'];
+    if (isDone is! bool) {
+      return Response(400,
+          body: jsonEncode({'error': 'isDone doit être un booléen'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final updated = await db.query('''UPDATE patient_reminders SET is_done = @d
+          WHERE id = @id AND patient_id IN
+          (SELECT id FROM patients WHERE user_id = @u)
+          RETURNING *''',
+          substitutionValues: {'d': isDone, 'id': reminderId, 'u': uid});
+      if (updated.isEmpty) {
+        return Response.notFound(jsonEncode({'error': 'Rappel introuvable'}),
+            headers: {'content-type': 'application/json'});
+      }
+      return Response.ok(jsonEncode(jsonSafe(updated.first.toColumnMap())),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..delete('/reminders/<id>', (Request req, String id) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final uid = int.parse(user['id'].toString());
+    final reminderId = int.tryParse(id);
+    if (reminderId == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      await db.query('''DELETE FROM patient_reminders
+          WHERE id = @id AND patient_id IN
+          (SELECT id FROM patients WHERE user_id = @u)''',
+          substitutionValues: {'id': reminderId, 'u': uid});
+      return Response.ok(jsonEncode({'status': 'ok'}),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..post('/appointments', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final uid = int.tryParse('${user['id']}');
+    if (uid == null) {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await req.readAsString());
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    if (decoded is! Map<String, dynamic>) {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final dateString = decoded['appointmentDate'] as String?;
+    if (dateString == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Date du rendez-vous requise'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final parsedDate = DateTime.tryParse(dateString);
+    if (parsedDate == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Date invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final duration = (decoded['durationMinutes'] as num?)?.toInt() ?? 30;
+    final notes = (decoded['notes'] as String?)?.trim();
+    final db = Database();
+    await db.connect();
+    try {
+      final patient = await db.query('''SELECT p.id, d.id AS doctor_id
+          FROM patients p
+          JOIN doctors d ON d.id = p.assigned_doctor_id
+          WHERE p.user_id = @u''', substitutionValues: {'u': uid});
+      if (patient.isEmpty) {
+        return Response(409,
+            body: jsonEncode(
+                {'error': 'Aucun médecin n\'est encore affecté à votre profil'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final row = patient.first.toColumnMap();
+      final inserted = await db.query('''INSERT INTO appointments
+          (patient_id, doctor_id, appointment_date, duration_minutes, notes)
+          VALUES (@p, @d, @date, @dur, @n) RETURNING *''',
+          substitutionValues: {
+            'p': row['id'],
+            'd': row['doctor_id'],
+            'date': parsedDate.toUtc(),
+            'dur': duration,
+            'n': notes,
+          });
+      return Response(201,
+          body: jsonEncode(jsonSafe(inserted.first.toColumnMap())),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
   });
 
 // Export named router

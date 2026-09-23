@@ -324,7 +324,7 @@ class _AdminPatientAccountsScreenState
         ),
       );
 
-  void _action(String value, AdminPatientAccount patient) {
+  Future<void> _action(String value, AdminPatientAccount patient) async {
     switch (value) {
       case 'view':
         _showMessage(
@@ -342,7 +342,14 @@ class _AdminPatientAccountsScreenState
         _confirmAndApply(patient, 'suspended');
         break;
       case 'assign':
-        Navigator.pushNamed(context, '/admin/admin_assign_doctor_screen');
+        final result = await Navigator.pushNamed(
+          context,
+          '/admin/admin_assign_doctor_screen',
+          arguments: {'initialPatientId': patient.id},
+        );
+        if (result == true) {
+          _load();
+        }
         break;
     }
   }

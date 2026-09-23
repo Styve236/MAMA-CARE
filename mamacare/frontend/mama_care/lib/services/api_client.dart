@@ -131,6 +131,29 @@ class ApiClient {
   static Future<Map<String, dynamic>> doctorPatientDetail(String patientId) =>
       _getObject('/api/doctor/patients/$patientId');
 
+  static Future<List<Map<String, dynamic>>> doctorMessageThreads() async {
+    final response = await _get('/api/doctor/messages');
+    return response.cast<Map<String, dynamic>>();
+  }
+
+  static Future<Map<String, dynamic>> doctorMessageThread(
+    String patientUserId,
+  ) =>
+      _getObject('/api/doctor/messages/$patientUserId');
+
+  static Future<Map<String, dynamic>> sendDoctorMessage({
+    required String patientUserId,
+    required String message,
+  }) =>
+      _post('/api/doctor/messages', {
+        'patientUserId': patientUserId,
+        'message': message,
+      });
+
+  static Future<void> markDoctorThreadRead(String patientUserId) async {
+    await _post('/api/doctor/messages/$patientUserId/read', {});
+  }
+
   static Future<List<Map<String, dynamic>>> patientTelemetry() async {
     final response = await _get('/api/patient/telemetry');
     return response.cast<Map<String, dynamic>>();
@@ -155,6 +178,47 @@ class ApiClient {
   static Future<List<Map<String, dynamic>>> patientAppointments() async {
     final response = await _get('/api/patient/appointments');
     return response.cast<Map<String, dynamic>>();
+  }
+
+  static Future<Map<String, dynamic>> createPatientAppointment({
+    required DateTime appointmentDate,
+    int? durationMinutes,
+    String? notes,
+  }) {
+    return _post('/api/patient/appointments', {
+      'appointmentDate': appointmentDate.toUtc().toIso8601String(),
+      'durationMinutes': durationMinutes,
+      'notes': notes,
+    });
+  }
+
+  static Future<Map<String, dynamic>> patientMessages() =>
+      _getObject('/api/patient/messages');
+
+  static Future<Map<String, dynamic>> sendPatientMessage(String message) =>
+      _post('/api/patient/messages', {'message': message});
+
+  static Future<List<Map<String, dynamic>>> patientReminders() async {
+    final response = await _get('/api/patient/reminders');
+    return response.cast<Map<String, dynamic>>();
+  }
+
+  static Future<Map<String, dynamic>> createPatientReminder({
+    required String title,
+    required DateTime reminderDate,
+  }) {
+    return _post('/api/patient/reminders', {
+      'title': title,
+      'reminderDate': reminderDate.toUtc().toIso8601String(),
+    });
+  }
+
+  static Future<void> setPatientReminderDone(int id, bool isDone) async {
+    await _patch('/api/patient/reminders/$id', {'isDone': isDone});
+  }
+
+  static Future<void> deletePatientReminder(int id) async {
+    await _delete('/api/patient/reminders/$id');
   }
 
   static Future<Map<String, dynamic>> adminStats() =>
@@ -182,6 +246,15 @@ class ApiClient {
     required String status,
   }) async {
     await _patch('/api/admin/patients/$userId/status', {'status': status});
+  }
+
+  static Future<void> adminAssignDoctor({
+    required String userId,
+    int? doctorId,
+  }) async {
+    await _patch('/api/admin/patients/$userId/assign-doctor', {
+      'doctorId': doctorId,
+    });
   }
 
   static Future<List<Map<String, dynamic>>> adminActivityLogs() async {
@@ -275,6 +348,30 @@ class ApiClient {
           if (_token != null) 'authorization': 'Bearer $_token',
         },
         body: jsonEncode(body),
+      );
+      _ensureJsonResponse(response);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiException(_errorMessage(response));
+      }
+    } on ApiException {
+      rethrow;
+    } on FormatException {
+      throw const ApiException('Réponse invalide du serveur');
+    } catch (_) {
+      throw const ApiException(
+        'Serveur indisponible. Vérifiez que le backend est démarré.',
+      );
+    }
+  }
+
+  static Future<void> _delete(String path) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl$path'),
+        headers: {
+          'content-type': 'application/json',
+          if (_token != null) 'authorization': 'Bearer $_token',
+        },
       );
       _ensureJsonResponse(response);
       if (response.statusCode < 200 || response.statusCode >= 300) {

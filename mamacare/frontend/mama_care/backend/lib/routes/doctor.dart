@@ -257,6 +257,194 @@ final _doctorRouter = Router()
     } finally {
       await db.close();
     }
+  })
+  ..get('/messages', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'medecin') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final docUid = int.parse(user['id'].toString());
+    final db = Database();
+    await db.connect();
+    try {
+      final docRes = await db.query(
+          'SELECT id FROM doctors WHERE user_id = @uid',
+          substitutionValues: {'uid': docUid});
+      if (docRes.isEmpty) {
+        return Response.notFound(jsonEncode({'message': 'Doctor not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final docId = docRes.first[0];
+      final rows = await db.query('''SELECT u.id AS patient_user_id, u.first_name,
+          u.last_name, p.id AS patient_id,
+          (SELECT m2.message_text FROM messages m2
+             WHERE (m2.sender_id = u.id AND m2.recipient_id = @du)
+                OR (m2.sender_id = @du AND m2.recipient_id = u.id)
+             ORDER BY m2.created_at DESC LIMIT 1) AS last_message,
+          (SELECT m2.created_at FROM messages m2
+             WHERE (m2.sender_id = u.id AND m2.recipient_id = @du)
+                OR (m2.sender_id = @du AND m2.recipient_id = u.id)
+             ORDER BY m2.created_at DESC LIMIT 1) AS last_message_at,
+          (SELECT COUNT(*) FROM messages m2
+             WHERE m2.sender_id = u.id AND m2.recipient_id = @du
+               AND m2.is_read = FALSE) AS unread_count
+          FROM patients p
+          JOIN users u ON u.id = p.user_id
+          WHERE p.assigned_doctor_id = @docId
+          ORDER BY u.first_name''',
+          substitutionValues: {'du': docUid, 'docId': docId});
+      return Response.ok(jsonEncode(
+          rows.map((r) => jsonSafe(r.toColumnMap())).toList()),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..get('/messages/<patientUserId>', (Request req, String patientUserId) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'medecin') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final docUid = int.parse(user['id'].toString());
+    final pid = int.tryParse(patientUserId);
+    if (pid == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final docRes = await db.query(
+          'SELECT id FROM doctors WHERE user_id = @uid',
+          substitutionValues: {'uid': docUid});
+      if (docRes.isEmpty) {
+        return Response.notFound(jsonEncode({'message': 'Doctor not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final docId = docRes.first[0];
+      final patient = await db.query('''SELECT u.id AS user_id, u.first_name,
+          u.last_name FROM patients p JOIN users u ON u.id = p.user_id
+          WHERE p.user_id = @pid AND p.assigned_doctor_id = @docId''',
+          substitutionValues: {'pid': pid, 'docId': docId});
+      if (patient.isEmpty) {
+        return Response.notFound(
+            jsonEncode({'message': 'Patiente non affectée à ce médecin'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final rows = await db.query('''SELECT id, sender_id, recipient_id,
+          message_text, is_read, created_at
+          FROM messages
+          WHERE (sender_id = @du AND recipient_id = @pid)
+             OR (sender_id = @pid AND recipient_id = @du)
+          ORDER BY created_at ASC''', substitutionValues: {'du': docUid, 'pid': pid});
+      final messages = rows.map((r) {
+        final m = jsonSafe(r.toColumnMap()) as Map<String, dynamic>;
+        m['is_from_me'] = '${m['sender_id']}' == '$docUid';
+        return m;
+      }).toList();
+      return Response.ok(jsonEncode({
+        'patient': jsonSafe(patient.first.toColumnMap()),
+        'messages': messages,
+      }), headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..post('/messages', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'medecin') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final docUid = int.tryParse('${user['id']}');
+    if (docUid == null) {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await req.readAsString());
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    if (decoded is! Map<String, dynamic>) {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final pid = int.tryParse('${decoded['patientUserId']}');
+    final text = (decoded['message'] as String?)?.trim();
+    if (pid == null || text == null || text.isEmpty) {
+      return Response(400,
+          body: jsonEncode({'error': 'Patient et message requis'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final docRes = await db.query(
+          'SELECT id FROM doctors WHERE user_id = @uid',
+          substitutionValues: {'uid': docUid});
+      if (docRes.isEmpty) {
+        return Response.notFound(jsonEncode({'message': 'Doctor not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final docId = docRes.first[0];
+      final patient = await db.query('''SELECT id FROM patients
+          WHERE user_id = @pid AND assigned_doctor_id = @docId''',
+          substitutionValues: {'pid': pid, 'docId': docId});
+      if (patient.isEmpty) {
+        return Response.notFound(
+            jsonEncode({'message': 'Patiente non affectée à ce médecin'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final inserted = await db.query('''INSERT INTO messages
+          (sender_id, recipient_id, message_text)
+          VALUES (@s, @r, @t) RETURNING id, sender_id, recipient_id,
+          message_text, is_read, created_at''', substitutionValues: {
+        's': docUid,
+        'r': pid,
+        't': text,
+      });
+      final message = jsonSafe(inserted.first.toColumnMap())
+          as Map<String, dynamic>;
+      message['is_from_me'] = true;
+      return Response(201,
+          body: jsonEncode({'message': message}),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..post('/messages/<patientUserId>/read', (Request req, String patientUserId) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'medecin') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final docUid = int.parse(user['id'].toString());
+    final pid = int.tryParse(patientUserId);
+    if (pid == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      await db.query('''UPDATE messages SET is_read = TRUE, read_at = NOW()
+          WHERE sender_id = @pid AND recipient_id = @du AND is_read = FALSE''',
+          substitutionValues: {'pid': pid, 'du': docUid});
+      return Response.ok(jsonEncode({'status': 'ok'}),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
   });
 
 final router = _doctorRouter;

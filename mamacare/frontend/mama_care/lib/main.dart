@@ -117,8 +117,13 @@ class MamaCareApp extends StatelessWidget {
             const AdminPatientAccountsScreen(),
         '/admin/admin_doctor_accounts_screen': (context) =>
             const AdminDoctorAccountsScreen(),
-        '/admin/admin_assign_doctor_screen': (context) =>
-            const AdminAssignDoctorScreen(),
+        '/admin/admin_assign_doctor_screen': (context) {
+          final arguments =
+              ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return AdminAssignDoctorScreen(
+            initialPatientId: arguments?['initialPatientId'] as String?,
+          );
+        },
         '/admin/admin_global_statistics_screen': (context) =>
             const AdminGlobalStatisticsScreen(),
         '/admin/admin_activity_log_entry_screen': (context) =>
