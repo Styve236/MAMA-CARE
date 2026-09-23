@@ -29,6 +29,13 @@ class UserModel {
         'role': role
       }
     );
-    return Map<String, dynamic>.fromEntries(res.first.toColumnMap().entries);
+    final user = Map<String, dynamic>.fromEntries(res.first.toColumnMap().entries);
+    if (role == 'medecin') {
+      await db.query(
+        'INSERT INTO doctors (user_id) VALUES (@userId)',
+        substitutionValues: {'userId': user['id']},
+      );
+    }
+    return user;
   }
 }

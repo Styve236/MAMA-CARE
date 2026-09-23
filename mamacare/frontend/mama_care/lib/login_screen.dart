@@ -67,7 +67,13 @@ class _LoginScreenState extends State<LoginScreen> {
       case 'admin':
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (context) => const AdminDashboardScreen()),
+          MaterialPageRoute(
+              builder: (adminContext) => AdminDashboardScreen(
+                  onLogout: () {
+                    ApiClient.logout();
+                    Navigator.of(adminContext)
+                        .pushNamedAndRemoveUntil('/', (route) => false);
+                  })),
           (route) => false,
         ); 
         break;

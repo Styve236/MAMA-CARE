@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'services/api_client.dart';
+
 // --- ÉCRAN D'ACCUEIL COMMUN ---
 
 import 'welcome_screen.dart';
@@ -102,7 +104,13 @@ class MamaCareApp extends StatelessWidget {
 
         //admin
         '/admin/admin_dashboard_screen': (context) =>
-            const AdminDashboardScreen(),
+            AdminDashboardScreen(
+              onLogout: () {
+                ApiClient.logout();
+                Navigator.of(context)
+                    .pushNamedAndRemoveUntil('/', (route) => false);
+              },
+            ),
         '/admin/admin_account_management_screen': (context) =>
             const AdminAccountManagementScreen(),
         '/admin/admin_patient_accounts_screen': (context) =>

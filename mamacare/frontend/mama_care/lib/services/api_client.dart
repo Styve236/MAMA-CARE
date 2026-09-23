@@ -30,6 +30,10 @@ class ApiClient {
     return response;
   }
 
+  static void logout() {
+    _token = null;
+  }
+
   static Future<Map<String, dynamic>> register({
     required String email,
     required String password,
@@ -50,6 +54,27 @@ class ApiClient {
   static Future<List<Map<String, dynamic>>> doctorPatients() async {
     final response = await _get('/api/doctor/patients');
     return response.cast<Map<String, dynamic>>();
+  }
+
+  static Future<Map<String, dynamic>> doctorProfile() =>
+      _getObject('/api/doctor/profile');
+
+  static Future<void> updateDoctorProfile({
+    String? firstName,
+    String? lastName,
+    String? phone,
+    String? email,
+    String? specialization,
+    String? hospitalAffiliation,
+  }) {
+    return _patch('/api/doctor/profile', {
+      'firstName': firstName,
+      'lastName': lastName,
+      'phone': phone,
+      'email': email,
+      'specialization': specialization,
+      'hospitalAffiliation': hospitalAffiliation,
+    });
   }
 
   static Future<Map<String, dynamic>> patientProfile() =>
