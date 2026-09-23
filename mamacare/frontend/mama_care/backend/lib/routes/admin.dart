@@ -62,6 +62,105 @@ final _adminRouter = Router()
       await db.close();
     }
   })
+  ..get('/patients', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'admin') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final rows = await db.query('''
+        SELECT u.id AS user_id, u.email, u.first_name, u.last_name,
+               u.phone, u.status, u.created_at,
+               p.id AS patient_id, p.pregnancy_weeks, p.due_date, p.blood_type,
+               d.id AS doctor_id,
+               du.first_name AS doctor_first_name,
+               du.last_name AS doctor_last_name
+        FROM users u
+        LEFT JOIN patients p ON p.user_id = u.id
+        LEFT JOIN doctors d ON d.id = p.assigned_doctor_id
+        LEFT JOIN users du ON du.id = d.user_id
+        WHERE u.role = 'patiente'
+        ORDER BY u.created_at DESC
+      ''');
+      return Response.ok(
+          jsonEncode(rows.map((row) => jsonSafe(row.toColumnMap())).toList()),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..patch('/patients/<id>/status', (Request req, String id) async {
+    try {
+      final admin = _extractUser(req);
+      if (admin == null || admin['role'] != 'admin') {
+        return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final userId = int.parse(id);
+      final body = jsonDecode(await req.readAsString());
+      final status = body is Map<String, dynamic> ? body['status'] : null;
+      if (status != 'active' && status != 'disabled' && status != 'suspended') {
+        return Response(400,
+            body: jsonEncode({'error': 'Statut invalide'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final adminId = int.tryParse('${admin['id']}');
+      if (adminId == null) {
+        return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final db = Database();
+      await db.connect();
+      try {
+        final updated = await db.connection.transaction((ctx) async {
+          final rows = await ctx.query('''
+            UPDATE users
+            SET status = @status, updated_at = NOW()
+            WHERE id = @userId AND role = 'patiente'
+            RETURNING id, status
+          ''', substitutionValues: {'status': status, 'userId': userId});
+          if (rows.isEmpty) return null;
+          await ctx.query('''
+            INSERT INTO activity_logs
+              (user_id, action, resource_type, resource_id, details)
+            VALUES (@adminId, @action, 'patient', @userId, @details)
+          ''', substitutionValues: {
+            'adminId': adminId,
+            'action': status == 'active'
+                ? 'PATIENT_ACTIVATION'
+                : status == 'disabled'
+                    ? 'PATIENT_DEACTIVATION'
+                    : 'PATIENT_SUSPENSION',
+            'userId': userId,
+            'details': 'status=$status',
+          });
+          return rows.first.toColumnMap();
+        });
+        if (updated == null) {
+          return Response.notFound(
+              jsonEncode({'error': 'Patiente introuvable'}),
+              headers: {'content-type': 'application/json'});
+        }
+        return Response.ok(jsonEncode(jsonSafe(updated)),
+            headers: {'content-type': 'application/json'});
+      } finally {
+        await db.close();
+      }
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant ou JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    } catch (error) {
+      developer.log('Erreur modification statut patiente: $error',
+          level: 1000);
+      return Response.internalServerError(
+          body: jsonEncode({'error': 'Impossible de modifier le statut'}),
+          headers: {'content-type': 'application/json'});
+    }
+  })
   ..patch('/doctors/<id>/status', (Request req, String id) async {
     try {
       final admin = _extractUser(req);

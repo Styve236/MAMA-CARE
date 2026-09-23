@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/api_client.dart';
 
 enum AdminPatientStatus { pending, active, suspended, disabled }
 
@@ -17,26 +18,7 @@ class AdminPatientAccount {
 }
 
 class AdminPatientAccountsScreen extends StatefulWidget {
-  final VoidCallback? onBackToDashboard;
-  final List<AdminPatientAccount> patients;
-  final ValueChanged<AdminPatientAccount>? onView;
-  final ValueChanged<AdminPatientAccount>? onValidate;
-  final ValueChanged<AdminPatientAccount>? onActivate;
-  final ValueChanged<AdminPatientAccount>? onDisable;
-  final ValueChanged<AdminPatientAccount>? onSuspend;
-  final ValueChanged<AdminPatientAccount>? onDelete;
-
-  const AdminPatientAccountsScreen({
-    super.key,
-    this.onBackToDashboard,
-    this.patients = const [],
-    this.onView,
-    this.onValidate,
-    this.onActivate,
-    this.onDisable,
-    this.onSuspend,
-    this.onDelete,
-  });
+  const AdminPatientAccountsScreen({super.key});
 
   @override
   State<AdminPatientAccountsScreen> createState() =>
@@ -51,11 +33,14 @@ class _AdminPatientAccountsScreenState
 
   final _searchController = TextEditingController();
   String _filter = 'Toutes';
+  List<AdminPatientAccount> _allPatients = [];
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(() => setState(() {}));
+    _load();
   }
 
   @override
@@ -64,10 +49,57 @@ class _AdminPatientAccountsScreenState
     super.dispose();
   }
 
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final rows = await ApiClient.adminPatients();
+      if (!mounted) return;
+      setState(() {
+        _allPatients = rows
+            .map((json) {
+              final first = '${json['first_name'] ?? ''}'.trim();
+              final last = '${json['last_name'] ?? ''}'.trim();
+              final name = '$first $last'.trim();
+              return AdminPatientAccount(
+                id: '${json['user_id'] ?? json['id'] ?? ''}',
+                name: name.isEmpty ? (json['email'] as String? ?? '—') : name,
+                email: (json['email'] as String? ?? '—'),
+                status: _parseStatus(json['status']),
+              );
+            })
+            .toList();
+        _loading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _showMessage('Erreur', error.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _showMessage('Erreur', 'Impossible de charger les comptes patientes.');
+    }
+  }
+
+  AdminPatientStatus _parseStatus(Object? value) {
+    switch ('$value') {
+      case 'pending':
+        return AdminPatientStatus.pending;
+      case 'active':
+        return AdminPatientStatus.active;
+      case 'suspended':
+        return AdminPatientStatus.suspended;
+      case 'disabled':
+        return AdminPatientStatus.disabled;
+      default:
+        return AdminPatientStatus.active;
+    }
+  }
+
   List<AdminPatientAccount> get _patients {
     final query = _searchController.text.toLowerCase().trim();
 
-    return widget.patients.where((patient) {
+    return _allPatients.where((patient) {
       final searchMatch = query.isEmpty ||
           patient.name.toLowerCase().contains(query) ||
           patient.email.toLowerCase().contains(query);
@@ -93,13 +125,7 @@ class _AdminPatientAccountsScreenState
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: burgundy),
-          onPressed: () {
-            if (widget.onBackToDashboard != null) {
-              widget.onBackToDashboard!();
-            } else {
-              Navigator.of(context).maybePop();
-            }
-          },
+          onPressed: () => Navigator.of(context).maybePop(),
         ),
         title: const Text(
           'Comptes patientes',
@@ -118,13 +144,9 @@ class _AdminPatientAccountsScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _intro(),
-                    const SizedBox(height: 18),
                     _search(),
                     const SizedBox(height: 12),
                     _filters(),
-                    const SizedBox(height: 15),
-                    _actionsGuide(),
                     const SizedBox(height: 22),
                     const Text(
                       'Liste des patientes',
@@ -135,7 +157,17 @@ class _AdminPatientAccountsScreenState
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _patients.isEmpty ? _empty() : _patientList(),
+                    if (_loading && _allPatients.isEmpty)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(40),
+                          child: CircularProgressIndicator(color: burgundy),
+                        ),
+                      )
+                    else if (_patients.isEmpty)
+                      _empty()
+                    else
+                      _patientList(),
                   ],
                 ),
               ),
@@ -145,31 +177,6 @@ class _AdminPatientAccountsScreenState
       ),
     );
   }
-
-  Widget _intro() => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: lightBurgundy,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.people_outline, color: burgundy, size: 42),
-            SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                'Gestion des comptes patientes',
-                style: TextStyle(
-                  color: burgundy,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
 
   Widget _search() => TextField(
         controller: _searchController,
@@ -216,41 +223,12 @@ class _AdminPatientAccountsScreenState
     );
   }
 
-  Widget _actionsGuide() => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFF0E7E9)),
-        ),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            const Text(
-              'Actions administrateur :',
-              style: TextStyle(color: burgundy, fontWeight: FontWeight.w700),
-            ),
-            ActionChip(label: const Text('Consulter'), onPressed: () => _showMessage('Comptes patientes', 'Sélectionnez une patiente dans la liste pour consulter son compte.')),
-            ActionChip(label: const Text('Assigner'), onPressed: () => Navigator.pushNamed(context, '/admin/admin_assign_doctor_screen')),
-            ActionChip(label: const Text('Valider'), onPressed: () => _showMessage('Validation', 'Sélectionnez une patiente en attente dans la liste.')),
-            ActionChip(label: const Text('Activer'), onPressed: () => _showMessage('Activation', 'Sélectionnez une patiente désactivée dans la liste.')),
-            ActionChip(label: const Text('Désactiver'), onPressed: () => _showMessage('Désactivation', 'Sélectionnez une patiente active dans la liste.')),
-            ActionChip(label: const Text('Suspendre'), onPressed: () => _showMessage('Suspension', 'Sélectionnez une patiente active dans la liste.')),
-            ActionChip(label: const Text('Supprimer'), onPressed: () => _showMessage('Suppression', 'Sélectionnez une patiente dans la liste pour confirmer sa suppression.')),
-          ],
-        ),
-      );
-
   Widget _patientList() => Column(
         children: _patients
-            .map(
-              (patient) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _patientCard(patient),
-              ),
-            )
+            .map((patient) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _patientCard(patient),
+                ))
             .toList(),
       );
 
@@ -289,8 +267,8 @@ class _AdminPatientAccountsScreenState
                 if (inactive)
                   _actionButton('Activer', () => _action('activate', patient)),
                 if (!inactive)
-                  _actionButton('Désactiver', () => _action('disable', patient)),
-                _actionButton('Supprimer', () => _action('delete', patient), destructive: true),
+                  _actionButton(
+                      'Désactiver', () => _action('disable', patient)),
               ],
             ),
           ],
@@ -306,10 +284,11 @@ class _AdminPatientAccountsScreenState
             if (inactive)
               const PopupMenuItem(value: 'activate', child: Text('Activer')),
             if (!inactive)
-              const PopupMenuItem(value: 'disable', child: Text('Désactiver')),
+              const PopupMenuItem(
+                  value: 'disable', child: Text('Désactiver')),
             if (!inactive)
-              const PopupMenuItem(value: 'suspend', child: Text('Suspendre')),
-            const PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+              const PopupMenuItem(
+                  value: 'suspend', child: Text('Suspendre')),
           ],
         ),
       ),
@@ -348,54 +327,28 @@ class _AdminPatientAccountsScreenState
   void _action(String value, AdminPatientAccount patient) {
     switch (value) {
       case 'view':
-        if (widget.onView != null) {
-          widget.onView!(patient);
-        } else {
-          _showMessage('Compte patiente', '${patient.name}\n${patient.email}');
-        }
+        _showMessage(
+            'Compte patiente',
+            '${patient.name}\n${patient.email}\n${_status(patient.status)}');
         break;
       case 'validate':
-        if (widget.onValidate != null) {
-          widget.onValidate!(patient);
-        } else {
-          _showConfirmation('Valider le compte de ${patient.name} ?');
-        }
+      case 'activate':
+        _confirmAndApply(patient, 'active');
+        break;
+      case 'disable':
+        _confirmAndApply(patient, 'disabled');
+        break;
+      case 'suspend':
+        _confirmAndApply(patient, 'suspended');
         break;
       case 'assign':
         Navigator.pushNamed(context, '/admin/admin_assign_doctor_screen');
         break;
-      case 'activate':
-        if (widget.onActivate != null) {
-          widget.onActivate!(patient);
-        } else {
-          _showConfirmation('Activer le compte de ${patient.name} ?');
-        }
-        break;
-      case 'disable':
-        if (widget.onDisable != null) {
-          widget.onDisable!(patient);
-        } else {
-          _showConfirmation('Désactiver le compte de ${patient.name} ?');
-        }
-        break;
-      case 'suspend':
-        if (widget.onSuspend != null) {
-          widget.onSuspend!(patient);
-        } else {
-          _showConfirmation('Suspendre le compte de ${patient.name} ?');
-        }
-        break;
-      case 'delete':
-        if (widget.onDelete != null) {
-          widget.onDelete!(patient);
-        } else {
-          _showConfirmation('Supprimer le compte de ${patient.name} ?');
-        }
-        break;
     }
   }
 
-  Widget _actionButton(String label, VoidCallback onPressed, {bool destructive = false}) {
+  Widget _actionButton(String label, VoidCallback onPressed,
+      {bool destructive = false}) {
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
@@ -409,22 +362,59 @@ class _AdminPatientAccountsScreenState
     );
   }
 
-  Future<void> _showConfirmation(String message) async {
+  Future<void> _confirmAndApply(
+      AdminPatientAccount patient, String status) async {
+    final label = switch (status) {
+      'active' => 'Valider/Activer le compte de',
+      'disabled' => 'Désactiver le compte de',
+      _ => 'Suspendre le compte de',
+    };
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        content: Text(message),
+        content: Text('$label ${patient.name} ?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirmer')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirmer'),
+          ),
         ],
       ),
     );
-    if (confirmed == true && mounted) _showMessage('Action administrateur', 'Action confirmée.');
+    if (confirmed != true || !mounted) return;
+    try {
+      await ApiClient.updatePatientStatus(userId: patient.id, status: status);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Compte de ${patient.name} mis à jour'),
+          backgroundColor: burgundy,
+        ),
+      );
+      _load();
+    } on ApiException catch (error) {
+      if (mounted) _showMessage('Erreur', error.message);
+    }
   }
 
   void _showMessage(String title, String message) {
-    showDialog<void>(context: context, builder: (context) => AlertDialog(title: Text(title), content: Text(message), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer'))]));
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
   }
 
   String _status(AdminPatientStatus status) {

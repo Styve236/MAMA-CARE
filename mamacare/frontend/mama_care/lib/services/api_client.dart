@@ -56,8 +56,34 @@ class ApiClient {
     return response.cast<Map<String, dynamic>>();
   }
 
-  static Future<Map<String, dynamic>> doctorProfile() =>
-      _getObject('/api/doctor/profile');
+  static Future<Map<String, dynamic>> patientProfile() =>
+      _getObject('/api/patient/profile');
+
+  static Future<void> updatePatientProfile({
+    String? firstName,
+    String? lastName,
+    String? phone,
+    String? email,
+    int? pregnancyWeeks,
+    String? bloodType,
+    String? medicalConditions,
+    String? allergies,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
+  }) {
+    return _patch('/api/patient/profile', {
+      'firstName': firstName,
+      'lastName': lastName,
+      'phone': phone,
+      'email': email,
+      'pregnancyWeeks': pregnancyWeeks,
+      'bloodType': bloodType,
+      'medicalConditions': medicalConditions,
+      'allergies': allergies,
+      'emergencyContactName': emergencyContactName,
+      'emergencyContactPhone': emergencyContactPhone,
+    });
+  }
 
   static Future<void> updateDoctorProfile({
     String? firstName,
@@ -77,8 +103,8 @@ class ApiClient {
     });
   }
 
-  static Future<Map<String, dynamic>> patientProfile() =>
-      _getObject('/api/patient/profile');
+  static Future<Map<String, dynamic>> doctorProfile() =>
+      _getObject('/api/doctor/profile');
 
   static Future<List<Map<String, dynamic>>> patientTelemetry() async {
     final response = await _get('/api/patient/telemetry');
@@ -119,6 +145,18 @@ class ApiClient {
     required String status,
   }) async {
     await _patch('/api/admin/doctors/$userId/status', {'status': status});
+  }
+
+  static Future<List<Map<String, dynamic>>> adminPatients() async {
+    final response = await _get('/api/admin/patients');
+    return response.cast<Map<String, dynamic>>();
+  }
+
+  static Future<void> updatePatientStatus({
+    required String userId,
+    required String status,
+  }) async {
+    await _patch('/api/admin/patients/$userId/status', {'status': status});
   }
 
   static Future<List<Map<String, dynamic>>> adminActivityLogs() async {

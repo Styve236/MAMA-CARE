@@ -17,7 +17,7 @@ class UserModel {
     final passwordHash = HashService.hashPassword(password);
     final res = await db.query(
       '''INSERT INTO users (uuid, email, password_hash, first_name, last_name, phone, role, status)
-         VALUES (@uuid, @email, @passwordHash, @firstName, @lastName, @phone, @role, 'active')
+         VALUES (@uuid, @email, @passwordHash, @firstName, @lastName, @phone, @role, @status)
          RETURNING id, uuid, email, role, created_at''',
       substitutionValues: {
         'uuid': uuid,
@@ -26,13 +26,19 @@ class UserModel {
         'firstName': firstName,
         'lastName': lastName,
         'phone': phone,
-        'role': role
+        'role': role,
+        'status': role == 'patiente' ? 'pending' : 'active'
       }
     );
     final user = Map<String, dynamic>.fromEntries(res.first.toColumnMap().entries);
     if (role == 'medecin') {
       await db.query(
         'INSERT INTO doctors (user_id) VALUES (@userId)',
+        substitutionValues: {'userId': user['id']},
+      );
+    } else if (role == 'patiente') {
+      await db.query(
+        'INSERT INTO patients (user_id) VALUES (@userId)',
         substitutionValues: {'userId': user['id']},
       );
     }
