@@ -1,0 +1,207 @@
+import 'package:flutter/material.dart';
+
+class IAChatbotScreen extends StatefulWidget {
+  const IAChatbotScreen({super.key});
+  @override
+  State<IAChatbotScreen> createState() => _IAChatbotScreenState();
+}
+
+class _IAChatbotScreenState extends State<IAChatbotScreen> {
+  final Color burgundyColor = Color(0xFF800020);
+  final TextEditingController _messageController = TextEditingController();
+
+  // Liste de messages VIDE au démarrage
+  final List<Map<String, dynamic>> _messages = [];
+
+  void _sendMessage() {
+    if (_messageController.text.isEmpty) return;
+    setState(() {
+      _messages.add({"text": _messageController.text, "isMe": true});
+      _messageController.clear();
+    });
+
+    // Ici, vous connecterez plus tard votre API d'IA (ex: OpenAI ou Gemini)
+    // Simulation d'une réponse IA
+    Future.delayed(Duration(seconds: 1), () {
+      setState(() {
+        _messages.add({
+          "text":
+              "Je traite votre demande... Comment puis-je vous aider davantage ?",
+          "isMe": false,
+        });
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: burgundyColor,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            Navigator.pushReplacementNamed(context, '/patiente/dashboard');
+          },
+        ),
+        title: Column(
+          children: [
+            Text(
+              "Mamacare AI",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                SizedBox(width: 5),
+                Text(
+                  "En ligne",
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ],
+        ),
+        centerTitle: true,
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: _messages.isEmpty
+                ? _buildEmptyState()
+                : ListView.builder(
+                    padding: EdgeInsets.all(20),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) =>
+                        _buildChatBubble(_messages[index]),
+                  ),
+          ),
+          _buildSuggestionChips(),
+          _buildMessageInput(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 80,
+            color: Colors.grey.shade200,
+          ),
+          SizedBox(height: 20),
+          Text(
+            "Posez votre première question à Mamacare AI",
+            style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatBubble(Map<String, dynamic> message) {
+    bool isMe = message["isMe"];
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: EdgeInsets.only(bottom: 15),
+        padding: EdgeInsets.all(15),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: isMe ? burgundyColor : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: Text(
+          message["text"],
+          style: TextStyle(color: isMe ? Colors.white : Colors.black87),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuggestionChips() {
+    return SizedBox(
+      height: 60,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.symmetric(horizontal: 10),
+        children: ["Conseils nutrition", "Ma tension", "Urgence"]
+            .map(
+              (label) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                child: ActionChip(
+                  label: Text(
+                    label,
+                    style: TextStyle(color: burgundyColor, fontSize: 12),
+                  ),
+                  backgroundColor: burgundyColor.withValues(alpha: 0.05),
+                  onPressed: () {
+                    _messageController.text = label;
+                    _sendMessage();
+                  },
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildMessageInput() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(15, 10, 15, 30),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              decoration: InputDecoration(
+                hintText: "Écrivez votre message...",
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                contentPadding: EdgeInsets.symmetric(horizontal: 20),
+              ),
+              onSubmitted: (_) => _sendMessage(),
+            ),
+          ),
+          SizedBox(width: 10),
+          CircleAvatar(
+            backgroundColor: burgundyColor,
+            child: IconButton(
+              icon: Icon(Icons.send, color: Colors.white),
+              onPressed: _sendMessage,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

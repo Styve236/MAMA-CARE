@@ -1,0 +1,13 @@
+name: mama_care_server
+
+description: Auxiliary MamaCare server route package.
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  backend:
+    path: ../backend
+  shelf: ^1.4.0
+  shelf_router: ^1.0.0
