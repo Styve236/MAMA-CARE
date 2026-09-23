@@ -8,22 +8,22 @@ class Database {
   late PostgreSQLConnection connection;
 
   final String host =
-      Env.get('DB_HOST') ?? 'aws-0-eu-west-2.pooler.supabase.com';
-  final int port = int.tryParse(Env.get('DB_PORT') ?? '6543')!;
+      Env.get('DB_HOST') ?? 'aws-0-eu-central-1.pooler.supabase.com';
+  final int port = int.tryParse(Env.get('DB_PORT') ?? '5432')!;
   final String database = Env.get('DB_NAME') ?? 'postgres';
-  final String username = Env.get('DB_USER') ?? 'postgres.njbpgzposfglwdudivhd';
+  final String username = Env.get('DB_USER') ?? 'postgres.unwgionfobojsvrefcsn';
   final String password = Env.get('DB_PASSWORD') ?? '';
 
   Database();
 
   Future<void> connect() async {
-    connection = PostgreSQLConnection(host, port, database,
-        username: username, password: password, useSSL: true);
-
     Object? lastError;
     for (var attempt = 1; attempt <= 3; attempt++) {
+      final candidate = PostgreSQLConnection(host, port, database,
+          username: username, password: password, useSSL: true);
       try {
-        await connection.open();
+        await candidate.open();
+        connection = candidate;
         developer.log('Connected to PostgreSQL at $host:$port/$database');
         return;
       } on SocketException catch (error) {
