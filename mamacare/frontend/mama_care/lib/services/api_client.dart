@@ -111,6 +111,26 @@ class ApiClient {
   static Future<Map<String, dynamic>> doctorProfile() =>
       _getObject('/api/doctor/profile');
 
+  static Future<Map<String, dynamic>> doctorStats() =>
+      _getObject('/api/doctor/stats');
+
+  static Future<List<Map<String, dynamic>>> doctorAlerts() async {
+    final response = await _get('/api/doctor/alerts');
+    return response.cast<Map<String, dynamic>>();
+  }
+
+  static Future<int> doctorAlertUnreadCount() async {
+    final response = await _getObject('/api/doctor/alerts/unread-count');
+    return (response['count'] as num?)?.toInt() ?? 0;
+  }
+
+  static Future<void> markDoctorAlertRead(int id) async {
+    await _patch('/api/doctor/alerts/$id/read', {});
+  }
+
+  static Future<Map<String, dynamic>> doctorPatientDetail(String patientId) =>
+      _getObject('/api/doctor/patients/$patientId');
+
   static Future<List<Map<String, dynamic>>> patientTelemetry() async {
     final response = await _get('/api/patient/telemetry');
     return response.cast<Map<String, dynamic>>();

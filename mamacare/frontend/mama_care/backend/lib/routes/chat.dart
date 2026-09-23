@@ -4,6 +4,7 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/env.dart';
+import 'package:backend/utils/gemini.dart' show kGeminiModels;
 
 const _systemPrompt = '''
 Tu es Mamacare AI, l'assistante virtuelle de l'application Mamacare dédiée au suivi de la grossesse.
@@ -52,68 +53,64 @@ final _chatRouter = Router()
     final apiKey = Env.get('GEMINI_API_KEY');
     if (apiKey == null || apiKey.isEmpty) {
       return Response(503,
-          body: jsonEncode({
-            'error': "L'assistant IA n'est pas encore configuré."
-          }),
+          body: jsonEncode(
+              {'error': "L'assistant IA n'est pas encore configuré."}),
           headers: {'content-type': 'application/json'});
     }
 
     final client = HttpClient();
     try {
-      final uri = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=$apiKey');
-      final request = await client.postUrl(uri);
-      request.headers.contentType = ContentType.json;
-      request.write(jsonEncode({
-        'systemInstruction': {
-          'parts': [
-            {'text': _systemPrompt}
-          ]
-        },
-        'contents': [
-          {
-            'role': 'user',
+      for (final model in kGeminiModels) {
+        final uri = Uri.parse(
+            'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey');
+        final request = await client.postUrl(uri);
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode({
+          'systemInstruction': {
             'parts': [
-              {'text': message.trim()}
+              {'text': _systemPrompt}
             ]
-          }
-        ],
-        'generationConfig': {
-          'maxOutputTokens': 400,
-          'temperature': 0.6,
-        },
-      }));
+          },
+          'contents': [
+            {
+              'role': 'user',
+              'parts': [
+                {'text': message.trim()}
+              ]
+            }
+          ],
+          'generationConfig': {
+            'maxOutputTokens': 400,
+            'temperature': 0.6,
+          },
+        }));
 
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
-      if (response.statusCode != 200) {
-        return Response(502,
-            body: jsonEncode({'error': 'Réponse invalide du service IA'}),
-            headers: {'content-type': 'application/json'});
-      }
+        final response = await request.close();
+        final responseBody = await response.transform(utf8.decoder).join();
+        if (response.statusCode != 200) continue;
 
-      final decodedResponse = jsonDecode(responseBody) as Map<String, dynamic>;
-      final candidates = decodedResponse['candidates'] as List?;
-      String? text;
-      if (candidates != null && candidates.isNotEmpty) {
-        final content =
-            (candidates.first as Map<String, dynamic>)['content'];
-        if (content is Map<String, dynamic>) {
-          final parts = content['parts'] as List?;
-          if (parts != null && parts.isNotEmpty) {
-            final first = parts.first;
-            if (first is Map<String, dynamic>) {
-              text = first['text'] as String?;
+        final decodedResponse =
+            jsonDecode(responseBody) as Map<String, dynamic>;
+        final candidates = decodedResponse['candidates'] as List?;
+        String? text;
+        if (candidates != null && candidates.isNotEmpty) {
+          final content = (candidates.first as Map<String, dynamic>)['content'];
+          if (content is Map<String, dynamic>) {
+            final parts = content['parts'] as List?;
+            if (parts != null && parts.isNotEmpty) {
+              text = parts
+                  .map((p) =>
+                      (p as Map<String, dynamic>)['text'] as String? ?? '')
+                  .join();
             }
           }
         }
-      }
-      if (text == null || text.trim().isEmpty) {
-        return Response(502,
-            body: jsonEncode({'error': "L'IA n'a fourni aucune réponse"}),
+        if (text == null || text.trim().isEmpty) continue;
+        return Response.ok(jsonEncode({'reply': text.trim()}),
             headers: {'content-type': 'application/json'});
       }
-      return Response.ok(jsonEncode({'reply': text.trim()}),
+      return Response(502,
+          body: jsonEncode({'error': 'Réponse invalide du service IA'}),
           headers: {'content-type': 'application/json'});
     } on SocketException {
       return Response(502,

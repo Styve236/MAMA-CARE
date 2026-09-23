@@ -4,6 +4,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/json_safe.dart';
+import 'package:backend/utils/gemini.dart';
 
 Map<String, dynamic>? _extractUser(Request req) {
   final auth = req.headers['authorization'];
@@ -197,29 +198,98 @@ final _patientRouter = Router()
     final uid = user?['id']?.toString();
     if (user == null || user['role'] != 'patiente') return Response.forbidden(jsonEncode({'message': 'Unauthorized'}), headers: {'content-type': 'application/json'});
     if (uid == null) return Response.forbidden(jsonEncode({'message': 'Unauthorized'}), headers: {'content-type': 'application/json'});
-    final body = jsonDecode(await req.readAsString());
+    final Object? decodedBody;
+    try {
+      decodedBody = jsonDecode(await req.readAsString());
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    if (decodedBody is! Map<String, dynamic>) {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final body = decodedBody;
 
     final db = Database();
     await db.connect();
-    final patientRes = await db.query('SELECT id FROM patients WHERE user_id = @uid', substitutionValues: {'uid': int.parse(uid)});
-    if (patientRes.isEmpty) {
+    try {
+      final patientRes = await db.query(
+        'SELECT p.id, p.assigned_doctor_id, p.pregnancy_weeks, p.blood_type, '
+        'p.medical_conditions, p.allergies, '
+        'du.id AS doctor_user_id, d.id AS doctor_id '
+        'FROM patients p '
+        'LEFT JOIN doctors d ON d.id = p.assigned_doctor_id '
+        'LEFT JOIN users du ON du.id = d.user_id '
+        'WHERE p.user_id = @uid',
+        substitutionValues: {'uid': int.parse(uid)},
+      );
+      if (patientRes.isEmpty) {
+        return Response.notFound(jsonEncode({'message': 'Patient not found'}), headers: {'content-type': 'application/json'});
+      }
+      final patientRow = patientRes.first.toColumnMap();
+      final patientId = patientRow['id'];
+
+      final q = '''INSERT INTO telemetry (patient_id, weight, blood_pressure_systolic, blood_pressure_diastolic, heart_rate, blood_glucose, temperature, notes) VALUES (@p, @w, @s, @d, @h, @g, @t, @n) RETURNING *''';
+      final inserted = await db.query(q, substitutionValues: {
+        'p': patientId,
+        'w': body['weight'],
+        's': body['bloodPressureSystolic'],
+        'd': body['bloodPressureDiastolic'],
+        'h': body['heartRate'],
+        'g': body['bloodGlucose'],
+        't': body['temperature'],
+        'n': body['notes']
+      });
+      final telemetryRow = jsonSafe(inserted.first.toColumnMap()) as Map<String, dynamic>;
+
+      Map<String, dynamic>? analysis;
+      final doctorId = patientRow['assigned_doctor_id'];
+      final profile = {
+        'pregnancy_weeks': patientRow['pregnancy_weeks'],
+        'blood_type': patientRow['blood_type'],
+        'medical_conditions': patientRow['medical_conditions'],
+        'allergies': patientRow['allergies'],
+      };
+      analysis = await analyzeTelemetry(profile, telemetryRow);
+      if (analysis != null && doctorId != null) {
+        await db.query(
+          '''INSERT INTO alerts (doctor_id, patient_id, alert_type, severity, message, details)
+             VALUES (@d, @p, 'ia_assessment', @s, @m, @det)''',
+          substitutionValues: {
+            'd': doctorId,
+            'p': patientId,
+            's': analysis['severity'],
+            'm': analysis['summary'],
+            'det': jsonEncode(analysis),
+          },
+        );
+        final doctorUserId = patientRow['doctor_user_id'];
+        if (doctorUserId != null) {
+          await db.query(
+            '''INSERT INTO notifications (user_id, title, message, notification_type, data)
+               VALUES (@u, @t, @m, 'alert', @data)''',
+            substitutionValues: {
+              'u': doctorUserId,
+              't': 'Nouvelle alerte IA — patiente ${analysis['severity']}',
+              'm': analysis['summary'],
+              'data': jsonEncode(analysis),
+            },
+          );
+        }
+      }
+
+      return Response(201,
+          body: jsonEncode({
+            'telemetry': telemetryRow,
+            if (analysis != null) 'ia': analysis,
+          }),
+          headers: {'content-type': 'application/json'});
+    } finally {
       await db.close();
-      return Response.notFound(jsonEncode({'message': 'Patient not found'}), headers: {'content-type': 'application/json'});
     }
-    final patientId = patientRes.first[0];
-    final q = '''INSERT INTO telemetry (patient_id, weight, blood_pressure_systolic, blood_pressure_diastolic, heart_rate, blood_glucose, temperature, notes) VALUES (@p, @w, @s, @d, @h, @g, @t, @n) RETURNING *''';
-    final inserted = await db.query(q, substitutionValues: {
-      'p': patientId,
-      'w': body['weight'],
-      's': body['bloodPressureSystolic'],
-      'd': body['bloodPressureDiastolic'],
-      'h': body['heartRate'],
-      'g': body['bloodGlucose'],
-      't': body['temperature'],
-      'n': body['notes']
-    });
-    await db.close();
-    return Response(201, body: jsonEncode({'telemetry': jsonSafe(inserted.first.toColumnMap())}), headers: {'content-type': 'application/json'});
   });
 
 // Export named router

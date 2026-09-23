@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mama_care/services/api_client.dart';
 import 'package:mama_care/notifications_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -17,6 +18,31 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   static const Color pageBackground = Color(0xFFFCF9FA);
 
   int _selectedIndex = 0;
+  Map<String, dynamic> _stats = const {};
+  bool _statsLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final stats = await ApiClient.adminStats();
+      if (mounted) {
+        setState(() {
+          _stats = stats;
+          _statsLoading = false;
+        });
+      }
+    } on ApiException {
+      if (mounted) setState(() => _statsLoading = false);
+    }
+  }
+
+  String _statValue(Object? value) =>
+      _statsLoading ? '—' : '${value ?? 0}';
 
   final List<_AdminDestination> _destinations = const [
     _AdminDestination(
@@ -272,21 +298,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           icon: Icons.people_outline,
           title: 'Gestion des comptes',
           description:
-              'Les comptes des patientes et des médecins apparaîtront ici après la connexion à Supabase.',
+              'Consultez la gestion des comptes patientes et médecins.',
+          onOpen: () => Navigator.pushNamed(
+            context, '/admin/admin_account_management_screen',
+          ),
         );
       case 2:
         return _buildEmptySection(
           icon: Icons.verified_user_outlined,
           title: 'Validation des comptes patientes',
           description:
-              'Les demandes de validation en attente apparaîtront ici.',
+              'Traitez les demandes de validation des comptes patientes.',
+          onOpen: () => Navigator.pushNamed(
+            context, '/admin/admin_patient_accounts_screen',
+          ),
         );
       case 3:
         return _buildEmptySection(
           icon: Icons.bar_chart_outlined,
           title: 'Statistiques globales',
           description:
-              'Les indicateurs et graphiques globaux seront chargés depuis les données réelles.',
+              'Visualisez les indicateurs et graphiques globaux de l\'application.',
+          onOpen: () => Navigator.pushNamed(
+            context, '/admin/admin_global_statistics_screen',
+          ),
         );
       default:
         return _buildDashboardHome();
@@ -388,30 +423,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildSummaryGrid() {
-    const cards = [
+    final cards = [
       _SummaryCardData(
         title: 'Comptes utilisateurs',
-        value: '—',
+        value: _statValue(_stats['total_users']),
         subtitle: 'Patientes et médecins',
         icon: Icons.people_outline,
       ),
       _SummaryCardData(
-        title: 'Médecins en attente',
-        value: '—',
-        subtitle: 'Comptes à traiter',
+        title: 'Médecins',
+        value: _statValue(_stats['total_doctors']),
+        subtitle: 'Comptes médecins enregistrés',
         icon: Icons.medical_services_outlined,
       ),
       _SummaryCardData(
-        title: 'Patientes en attente',
-        value: '—',
-        subtitle: 'Demandes à valider',
+        title: 'Patientes',
+        value: _statValue(_stats['total_patients']),
+        subtitle: 'Comptes patientes',
         icon: Icons.fact_check_outlined,
       ),
       _SummaryCardData(
-        title: 'Activité globale',
-        value: '—',
-        subtitle: 'Données disponibles après connexion',
-        icon: Icons.insights_outlined,
+        title: 'Alertes IA non lues',
+        value: _statValue(_stats['total_alerts']),
+        subtitle: 'Analyse transmise aux médecins',
+        icon: Icons.notifications_active_outlined,
       ),
     ];
 
@@ -643,6 +678,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required IconData icon,
     required String title,
     required String description,
+    VoidCallback? onOpen,
   }) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -689,6 +725,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     height: 1.5,
                   ),
                 ),
+                if (onOpen != null) ...[
+                  const SizedBox(height: 22),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: burgundy,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                    ),
+                    onPressed: onOpen,
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('Ouvrir'),
+                  ),
+                ],
               ],
             ),
           ),
