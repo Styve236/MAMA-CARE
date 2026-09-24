@@ -29,6 +29,7 @@ class _DashboardState extends State<Dashboard> {
   String doctorName = "En attente d'affectation";
 
   int _selectedIndex = 0;
+  int _unreadMessages = 0;
 
   // LISTE DES 5 ÉCRANS LIÉS AUX 5 ONGLETS DU BAS
   List<Widget> _pages(BuildContext context) => [
@@ -58,24 +59,28 @@ class _DashboardState extends State<Dashboard> {
             _selectedIndex = index;
           });
         },
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.home),
             label: 'Accueil',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.bar_chart),
             label: 'Stats',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.chat),
             label: 'AI Chat',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.message),
+            icon: Badge(
+              isLabelVisible: _unreadMessages > 0,
+              label: Text('$_unreadMessages'),
+              child: const Icon(Icons.message),
+            ),
             label: 'Messages',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.person),
             label: 'Profil',
           ),
@@ -103,6 +108,7 @@ class _DashboardState extends State<Dashboard> {
         ApiClient.patientProfile(),
         ApiClient.patientTelemetry(),
         ApiClient.patientAppointments(),
+        ApiClient.patientMessageUnreadCount(),
       ]);
       if (!mounted) return;
 
@@ -113,6 +119,7 @@ class _DashboardState extends State<Dashboard> {
       final upcomingAppointment = appointments.isEmpty ? null : appointments.first;
 
       setState(() {
+        _unreadMessages = results[3] as int;
         patientName = [profile['first_name'], profile['last_name']]
             .whereType<String>()
             .where((value) => value.isNotEmpty)

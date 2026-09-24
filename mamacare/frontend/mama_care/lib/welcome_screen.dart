@@ -1,7 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'shared/app_theme.dart';
-import 'package:mama_care/login_screen.dart'; // Remplace par le chemin exact de ton écran de connexion universel
+import 'package:mama_care/login_screen.dart';
+import 'package:mama_care/services/api_client.dart';
+import 'package:mama_care/patiente/dashboard.dart';
+import 'package:mama_care/medecin/doctor_dashboard_mobile.dart';
+import 'package:mama_care/admin/admin_dashboard_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -18,17 +22,54 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Redirection automatique après 2.5 secondes vers la page de connexion
-    _redirectTimer = Timer(const Duration(milliseconds: 2500), () {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const LoginScreen(), // Ton écran de connexion universel
-          ),
-        );
+    // Redirection automatique après 2.5 secondes :
+    // vers le tableau de bord du rôle si une session est active,
+    // sinon vers la page de connexion.
+    _redirectTimer = Timer(const Duration(milliseconds: 2500), () async {
+      if (!mounted) return;
+      if (ApiClient.isLoggedIn) {
+        final role = '${ApiClient.currentUser?['role'] ?? ''}';
+        try {
+          await ApiClient.verifySession();
+          if (!mounted) return;
+          _openHomeForRole(role);
+          return;
+        } on ApiException {
+          await ApiClient.logout();
+        }
       }
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
     });
+  }
+
+  void _openHomeForRole(String role) {
+    Widget home;
+    switch (role) {
+      case 'medecin':
+        home = const DoctorDashboardMobile();
+        break;
+      case 'admin':
+        home = AdminDashboardScreen(
+          onLogout: () {
+            ApiClient.logout();
+            Navigator.of(context)
+                .pushNamedAndRemoveUntil('/', (route) => false);
+          },
+        );
+        break;
+      case 'patiente':
+      default:
+        home = const Dashboard();
+        break;
+    }
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => home),
+      (route) => false,
+    );
   }
 
   @override

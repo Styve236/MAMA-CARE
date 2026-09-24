@@ -340,6 +340,45 @@ final _patientRouter = Router()
       await db.close();
     }
   })
+  ..get('/messages/unread-count', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final uid = int.parse(user['id'].toString());
+    final db = Database();
+    await db.connect();
+    try {
+      final rows = await db.query(
+          'SELECT COUNT(*) AS c FROM messages '
+          'WHERE recipient_id = @u AND is_read = false',
+          substitutionValues: {'u': uid});
+      return Response.ok(jsonEncode({'count': rows.first[0]}),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..post('/messages/read', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final uid = int.parse(user['id'].toString());
+    final db = Database();
+    await db.connect();
+    try {
+      await db.query('''UPDATE messages SET is_read = true, read_at = NOW()
+          WHERE recipient_id = @u AND is_read = false''',
+          substitutionValues: {'u': uid});
+      return Response.ok(jsonEncode({'status': 'ok'}),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
   ..post('/messages', (Request req) async {
     final user = _extractUser(req);
     if (user == null || user['role'] != 'patiente') {

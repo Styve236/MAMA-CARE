@@ -87,6 +87,7 @@ class _DoctorMessagingState extends State<DoctorMessaging> {
           ..addAll((data['messages'] as List).cast<Map<String, dynamic>>());
       });
       _scrollToBottom();
+      ApiClient.markPatientMessagesRead().catchError((_) {});
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -113,6 +114,7 @@ class _DoctorMessagingState extends State<DoctorMessaging> {
         });
         _scrollToBottom();
       }
+      ApiClient.markPatientMessagesRead().catchError((_) {});
     } on ApiException {
       // Ignoré pendant le rafraîchissement silencieux.
     }

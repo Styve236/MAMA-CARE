@@ -50,6 +50,8 @@ import 'admin/admin_activity_log_entry_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await ApiClient.restoreSession();
+
   runApp(const MamaCareApp());
 }
 

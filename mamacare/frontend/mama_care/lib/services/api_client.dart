@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -17,6 +18,47 @@ class ApiClient {
     defaultValue: 'http://localhost:3000',
   );
   static String? _token;
+  static Map<String, dynamic>? _user;
+  static const _kTokenKey = 'mamacare_auth_token';
+  static const _kUserKey = 'mamacare_auth_user';
+
+  static bool get isLoggedIn => _token != null && _token!.isNotEmpty;
+  static Map<String, dynamic>? get currentUser => _user;
+
+  static Future<void> restoreSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString(_kTokenKey);
+      final userJson = prefs.getString(_kUserKey);
+      if (token == null || token.isEmpty) return;
+      _token = token;
+      if (userJson != null) {
+        try {
+          final decoded = jsonDecode(userJson);
+          if (decoded is Map<String, dynamic>) _user = decoded;
+        } on FormatException {
+          _user = null;
+        }
+      }
+    } catch (_) {
+      // Le démarrage ne doit jamais échouer pour la restauration.
+    }
+  }
+
+  static Future<void> _persistSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_token == null || _token!.isEmpty) {
+        await prefs.remove(_kTokenKey);
+        await prefs.remove(_kUserKey);
+        return;
+      }
+      await prefs.setString(_kTokenKey, _token!);
+      if (_user != null) await prefs.setString(_kUserKey, jsonEncode(_user));
+    } catch (_) {
+      // Silencieux : la persistance est un confort, pas une contrainte.
+    }
+  }
 
   static Future<Map<String, dynamic>> login(
     String email,
@@ -27,11 +69,20 @@ class ApiClient {
       'password': password,
     });
     _token = response['token'] as String?;
+    final user = response['user'];
+    if (user is Map<String, dynamic>) _user = user;
+    await _persistSession();
     return response;
   }
 
-  static void logout() {
+  static Future<void> logout() async {
     _token = null;
+    _user = null;
+    await _persistSession();
+  }
+
+  static Future<void> verifySession() async {
+    await _getObject('/api/auth/verify');
   }
 
   static Future<String> sendChatMessage(String message) async {
@@ -46,7 +97,7 @@ class ApiClient {
     String? lastName,
     String? phone,
   }) async {
-    return _post('/api/auth/register', {
+    final response = await _post('/api/auth/register', {
       'email': email,
       'password': password,
       'role': 'patiente',
@@ -54,6 +105,11 @@ class ApiClient {
       'lastName': lastName,
       'phone': phone,
     });
+    _token = response['token'] as String?;
+    final user = response['user'];
+    if (user is Map<String, dynamic>) _user = user;
+    await _persistSession();
+    return response;
   }
 
   static Future<List<Map<String, dynamic>>> doctorPatients() async {
@@ -190,6 +246,15 @@ class ApiClient {
       'durationMinutes': durationMinutes,
       'notes': notes,
     });
+  }
+
+  static Future<int> patientMessageUnreadCount() async {
+    final response = await _getObject('/api/patient/messages/unread-count');
+    return (response['count'] as num?)?.toInt() ?? 0;
+  }
+
+  static Future<void> markPatientMessagesRead() async {
+    await _post('/api/patient/messages/read', {});
   }
 
   static Future<Map<String, dynamic>> patientMessages() =>

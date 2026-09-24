@@ -134,10 +134,30 @@ final _doctorRouter = Router()
       final patientsRes = await db.query('SELECT COUNT(*) AS c FROM patients WHERE assigned_doctor_id = @d', substitutionValues: {'d': docId});
       final alertsRes = await db.query('SELECT COUNT(*) AS c FROM alerts WHERE doctor_id = @d AND is_read = false', substitutionValues: {'d': docId});
       final messagesRes = await db.query('SELECT COUNT(*) AS c FROM messages WHERE recipient_id = @u AND is_read = false', substitutionValues: {'u': uid});
+      final alertsBySeverity = await db.query('''SELECT COALESCE(NULLIF(severity, ''), 'info') AS severity,
+          COUNT(*)::int AS count FROM alerts WHERE doctor_id = @d
+          GROUP BY severity ORDER BY count DESC''', substitutionValues: {'d': docId});
+      final alertsTrend = await db.query('''
+        SELECT to_char(d.day, 'YYYY-MM-DD') AS date, COUNT(a.id)::int AS count
+        FROM generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, '1 day') d(day)
+        LEFT JOIN alerts a ON a.doctor_id = @d AND a.created_at::date = d.day
+        GROUP BY d.day ORDER BY d.day''', substitutionValues: {'d': docId});
+      final patientsByWeeks = await db.query('''
+        SELECT CASE
+            WHEN pregnancy_weeks IS NULL OR pregnancy_weeks < 1 THEN 'Non défini'
+            WHEN pregnancy_weeks <= 12 THEN '1-12 sem'
+            WHEN pregnancy_weeks <= 27 THEN '13-27 sem'
+            ELSE '28+ sem'
+          END AS bracket, COUNT(*)::int AS count
+        FROM patients WHERE assigned_doctor_id = @d
+        GROUP BY bracket ORDER BY count DESC''', substitutionValues: {'d': docId});
       return Response.ok(jsonEncode({
         'patients': patientsRes.first[0],
         'alerts': alertsRes.first[0],
         'messages': messagesRes.first[0],
+        'alerts_by_severity': alertsBySeverity.map((r) => jsonSafe(r.toColumnMap())).toList(),
+        'alerts_trend': alertsTrend.map((r) => jsonSafe(r.toColumnMap())).toList(),
+        'patients_by_weeks': patientsByWeeks.map((r) => jsonSafe(r.toColumnMap())).toList(),
       }), headers: {'content-type': 'application/json'});
     } finally {
       await db.close();

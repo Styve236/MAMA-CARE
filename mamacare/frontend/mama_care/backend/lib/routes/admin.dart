@@ -26,11 +26,47 @@ final _adminRouter = Router()
     }
     final db = Database();
     await db.connect();
-    final res = await db.query(
-        'SELECT (SELECT COUNT(*) FROM users WHERE role = \'patiente\') as total_patients, (SELECT COUNT(*) FROM users WHERE role = \'medecin\') as total_doctors, (SELECT COUNT(*) FROM users) as total_users, (SELECT COUNT(*) FROM alerts WHERE is_read = FALSE) as total_alerts, (SELECT COUNT(*) FROM appointments) as total_appointments, (SELECT COUNT(*) FROM appointments WHERE status = \'completed\') as completed_appointments');
-    await db.close();
-    return Response.ok(jsonEncode(jsonSafe(res.first.toColumnMap())),
-        headers: {'content-type': 'application/json'});
+    try {
+      final res = await db.query(
+          'SELECT (SELECT COUNT(*) FROM users WHERE role = \'patiente\') as total_patients, (SELECT COUNT(*) FROM users WHERE role = \'medecin\') as total_doctors, (SELECT COUNT(*) FROM users) as total_users, (SELECT COUNT(*) FROM alerts WHERE is_read = FALSE) as total_alerts, (SELECT COUNT(*) FROM appointments) as total_appointments, (SELECT COUNT(*) FROM appointments WHERE status = \'completed\') as completed_appointments');
+
+      final patientsByStatus = await db.query(
+          "SELECT status, COUNT(*)::int AS count FROM users WHERE role = 'patiente' AND status IS NOT NULL GROUP BY status ORDER BY count DESC");
+      final appointmentsByStatus = await db.query(
+          "SELECT COALESCE(NULLIF(status, ''), 'scheduled') AS status, COUNT(*)::int AS count FROM appointments GROUP BY status ORDER BY count DESC");
+      final alertsBySeverity = await db.query(
+          "SELECT COALESCE(NULLIF(severity, ''), 'info') AS severity, COUNT(*)::int AS count FROM alerts GROUP BY severity ORDER BY count DESC");
+      final registrationsTrend = await db.query('''
+        SELECT to_char(d.day, 'YYYY-MM-DD') AS date, COUNT(u.id)::int AS count
+        FROM generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, '1 day') d(day)
+        LEFT JOIN users u ON u.role IN ('patiente', 'medecin') AND u.created_at::date = d.day
+        GROUP BY d.day ORDER BY d.day''');
+      final doctorsRank = await db.query('''
+        SELECT u.first_name, u.last_name, COUNT(p.id)::int AS patients
+        FROM doctors d
+        JOIN users u ON u.id = d.user_id
+        LEFT JOIN patients p ON p.assigned_doctor_id = d.id
+        GROUP BY d.id, u.first_name, u.last_name
+        ORDER BY patients DESC, u.last_name ASC LIMIT 8''');
+
+      final stats = jsonSafe(res.first.toColumnMap()) as Map<String, dynamic>;
+      stats['patients_by_status'] = patientsByStatus
+          .map((r) => jsonSafe(r.toColumnMap()))
+          .toList();
+      stats['appointments_by_status'] = appointmentsByStatus
+          .map((r) => jsonSafe(r.toColumnMap()))
+          .toList();
+      stats['alerts_by_severity'] =
+          alertsBySeverity.map((r) => jsonSafe(r.toColumnMap())).toList();
+      stats['registrations_trend'] =
+          registrationsTrend.map((r) => jsonSafe(r.toColumnMap())).toList();
+      stats['doctors_rank'] =
+          doctorsRank.map((r) => jsonSafe(r.toColumnMap())).toList();
+      return Response.ok(jsonEncode(stats),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
   })
   ..get('/doctors', (Request req) async {
     final user = _extractUser(req);

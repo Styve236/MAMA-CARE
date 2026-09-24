@@ -9,6 +9,7 @@ import 'package:mama_care/medecin/doctor_messages_list.dart';
 import 'package:mama_care/medecin/doctor_profile_screen.dart';
 import 'package:mama_care/medecin/widgets_patient_list_tab.dart';
 import '../shared/app_theme.dart';
+import '../shared/dashboard_charts.dart';
 
 class DoctorDashboardMobile extends StatefulWidget {
   const DoctorDashboardMobile({super.key});
@@ -23,6 +24,9 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
   List<Map<String, dynamic>> _patients = [];
   List<Map<String, dynamic>> _alerts = [];
   Map<String, int> _stats = const {'patients': 0, 'alerts': 0, 'messages': 0};
+  List<Map<String, dynamic>> _alertsBySeverity = [];
+  List<Map<String, dynamic>> _alertsTrend = [];
+  List<Map<String, dynamic>> _patientsByWeeks = [];
   bool _loading = true;
   String? _error;
   Timer? _refreshTimer;
@@ -51,15 +55,21 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
         ApiClient.doctorStats(),
       ]);
       if (mounted) {
+        final stats = results[2] as Map<String, dynamic>;
         setState(() {
           _patients = (results[0] as List).cast<Map<String, dynamic>>();
           _alerts = (results[1] as List).cast<Map<String, dynamic>>();
-          final stats = results[2] as Map<String, dynamic>;
           _stats = {
             'patients': (stats['patients'] as num?)?.toInt() ?? _patients.length,
             'alerts': (stats['alerts'] as num?)?.toInt() ?? 0,
             'messages': (stats['messages'] as num?)?.toInt() ?? 0,
           };
+          _alertsBySeverity = (stats['alerts_by_severity'] as List? ?? [])
+              .cast<Map<String, dynamic>>();
+          _alertsTrend = (stats['alerts_trend'] as List? ?? [])
+              .cast<Map<String, dynamic>>();
+          _patientsByWeeks = (stats['patients_by_weeks'] as List? ?? [])
+              .cast<Map<String, dynamic>>();
           _loading = false;
         });
       }
@@ -151,21 +161,29 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
           selectedItemColor: burgundy,
           unselectedItemColor: Colors.grey,
           type: BottomNavigationBarType.fixed,
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Accueil'),
-            BottomNavigationBarItem(
+          items: [
+            const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Accueil'),
+            const BottomNavigationBarItem(
               icon: Icon(Icons.person_outline),
               label: 'Patientes',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.gpp_maybe_outlined),
+              icon: Badge(
+                isLabelVisible: (_stats['alerts'] ?? 0) > 0,
+                label: Text('${_stats['alerts'] ?? 0}'),
+                child: const Icon(Icons.gpp_maybe_outlined),
+              ),
               label: 'Alertes',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.chat_bubble_outline),
+              icon: Badge(
+                isLabelVisible: (_stats['messages'] ?? 0) > 0,
+                label: Text('${_stats['messages'] ?? 0}'),
+                child: const Icon(Icons.chat_bubble_outline),
+              ),
               label: 'Messages',
             ),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               icon: Icon(Icons.account_circle_outlined),
               label: 'Profil',
             ),
@@ -187,7 +205,23 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          const Text(
+            'Vue d’ensemble',
+            style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: Color(0xFF4A3A3D)),
+          ),
+          const SizedBox(height: 16),
           _buildStatsRow(),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _buildSeverityDonutCard()),
+              const SizedBox(width: 12),
+              Expanded(child: _buildWeeksCard()),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _buildAlertTrendCard(),
           const SizedBox(height: 30),
           _buildSectionHeader(
             'Alertes IA prioritaires',
@@ -217,53 +251,113 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
   }
 
   Widget _buildStatsRow() {
-    final stats = [
-      ('Patientes', '${_stats['patients'] ?? 0}', Icons.person),
-      ('Alertes IA', '${_stats['alerts'] ?? 0}', Icons.notifications_active),
-      ('Messages', '${_stats['messages'] ?? 0}', Icons.chat_bubble_outline),
-    ];
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: stats
-          .map((s) => _buildStatCard(s.$1, s.$2, s.$3))
-          .toList(),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: KpiCard(
+            icon: Icons.people_outline,
+            label: 'Patientes suivies',
+            value: '${_stats['patients'] ?? 0}',
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: KpiCard(
+            icon: Icons.notifications_active_outlined,
+            label: 'Alertes non lues',
+            value: '${_stats['alerts'] ?? 0}',
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: KpiCard(
+            icon: Icons.chat_bubble_outline,
+            label: 'Messages non lus',
+            value: '${_stats['messages'] ?? 0}',
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon) {
-    final width = (MediaQuery.of(context).size.width - 40 - 24) / 3;
-    return Container(
-      width: width,
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(color: Colors.grey.shade100),
+  List<ChartSlice> _severitySlices() {
+    return _alertsBySeverity
+        .map((row) {
+          final severity = '${row['severity'] ?? 'info'}'.toLowerCase();
+          final count = (row['count'] as num?)?.toInt() ?? 0;
+          return ChartSlice(
+            _labelSeverity(severity),
+            count,
+            color: _colorSeverity(severity),
+          );
+        })
+        .toList();
+  }
+
+  String _labelSeverity(String severity) {
+    switch (severity) {
+      case 'critical':
+        return 'Critiques';
+      case 'warning':
+        return 'Modérées';
+      case 'normal':
+        return 'Normales';
+      default:
+        return 'Info';
+    }
+  }
+
+  Color _colorSeverity(String severity) {
+    switch (severity) {
+      case 'critical':
+        return colorCritical;
+      case 'warning':
+        return colorWarning;
+      case 'normal':
+        return colorOk;
+      default:
+        return colorInfo;
+    }
+  }
+
+  Widget _buildSeverityDonutCard() {
+    return ChartCardShell(
+      title: 'Alertes par sévérité',
+      child: DonutChart(slices: _severitySlices()),
+    );
+  }
+
+  Widget _buildWeeksCard() {
+    return ChartCardShell(
+      title: 'Patientes par trimestre',
+      child: HorizontalBarList(
+        slices: _patientsByWeeks
+            .map((row) => ChartSlice(
+                  '${row['bracket'] ?? 'Non défini'}',
+                  (row['count'] as num?)?.toInt() ?? 0,
+                  color: burgundy,
+                ))
+            .toList(),
       ),
-      child: Column(
-        children: [
-          Icon(icon, color: burgundy, size: 24),
-          const SizedBox(height: 8),
-          Text(label,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-              textAlign: TextAlign.center),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: burgundy,
-            ),
-          ),
-        ],
+    );
+  }
+
+  Widget _buildAlertTrendCard() {
+    final points = [
+      for (final row in _alertsTrend)
+        ChartPoint(
+          '${row['date'] ?? ''}',
+          (row['count'] as num?)?.toDouble(),
+        ),
+    ];
+    return ChartCardShell(
+      title: 'Alertes — 14 derniers jours',
+      subtitle: 'Activité de pré-alerte IA générée par vos patientes.',
+      child: TrendLineChart(
+        points: points,
+        color: burgundy,
+        unit: 'alerte(s)',
       ),
     );
   }

@@ -1,6 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
+
 import '../shared/app_theme.dart';
+import '../shared/dashboard_charts.dart';
+
+class _MetricDefinition {
+  final String label;
+  final String unit;
+  final Color color;
+  final String? Function(Map<String, dynamic> t) valueOf;
+  final String? Function(Map<String, dynamic> t)? secondaryOf;
+
+  _MetricDefinition({
+    required this.label,
+    required this.unit,
+    required this.color,
+    required this.valueOf,
+    this.secondaryOf,
+  });
+}
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -12,12 +30,47 @@ class StatsScreen extends StatefulWidget {
 class _StatsScreenState extends State<StatsScreen> {
   final Color burgundyColor = AppColors.burgundy;
 
+  static final List<_MetricDefinition> _metrics = [
+    _MetricDefinition(
+      label: 'Tension',
+      unit: 'mmHg',
+      color: burgundy,
+      valueOf: (t) => '${t['blood_pressure_systolic']}',
+      secondaryOf: (t) => '${t['blood_pressure_diastolic']}',
+    ),
+    _MetricDefinition(
+      label: 'Poids',
+      unit: 'kg',
+      color: colorOk,
+      valueOf: (t) => '${t['weight']}',
+    ),
+    _MetricDefinition(
+      label: 'Glycémie',
+      unit: 'mmol/L',
+      color: colorCritical,
+      valueOf: (t) => '${t['blood_glucose']}',
+    ),
+    _MetricDefinition(
+      label: 'Température',
+      unit: '°C',
+      color: colorWarning,
+      valueOf: (t) => '${t['temperature']}',
+    ),
+    _MetricDefinition(
+      label: 'Fréquence',
+      unit: 'bpm',
+      color: colorInfo,
+      valueOf: (t) => '${t['heart_rate']}',
+    ),
+  ];
+
   int _selectedType = 0;
   List<Map<String, dynamic>> _telemetry = [];
   bool _loading = true;
   String? _error;
 
-  static const List<String> _titles = ['tension', 'poids', 'glycémie'];
+  List<Map<String, dynamic>> get _chronological =>
+      _telemetry.reversed.toList();
 
   @override
   void initState() {
@@ -44,27 +97,36 @@ class _StatsScreenState extends State<StatsScreen> {
     }
   }
 
-  bool get _hasData => _telemetry.isNotEmpty;
+  _MetricDefinition get _current => _metrics[_selectedType];
 
-  List<num> get _values {
-    final list = _telemetry.reversed.toList();
-    switch (_selectedType) {
-      case 1:
-        return list
-            .map((t) => num.tryParse('${t['weight']}'))
-            .whereType<num>()
-            .toList();
-      case 2:
-        return list
-            .map((t) => num.tryParse('${t['blood_glucose']}'))
-            .whereType<num>()
-            .toList();
-      default:
-        return list
-            .map((t) => num.tryParse('${t['blood_pressure_systolic']}'))
-            .whereType<num>()
-            .toList();
-    }
+  String _fmt(Object? v) {
+    final n = num.tryParse('$v');
+    if (n == null) return '—';
+    if (n == n.roundToDouble()) return '${n.toInt()}';
+    return n.toStringAsFixed(1);
+  }
+
+  String _shortDate(Object? value) {
+    final parsed = DateTime.tryParse('$value');
+    if (parsed == null) return '';
+    return '${parsed.day}/${parsed.month}';
+  }
+
+  List<ChartPoint> _points(_MetricDefinition m, bool secondary) {
+    return [
+      for (final t in _chronological)
+        ChartPoint(
+          _shortDate(t['recorded_at']),
+          num.tryParse(
+            '${secondary ? m.secondaryOf?.call(t) : m.valueOf(t)}',
+          )?.toDouble(),
+        ),
+    ];
+  }
+
+  Color? _trendColor(double? prev, double? last) {
+    if (prev == null || last == null) return null;
+    return last >= prev ? colorCritical : colorOk;
   }
 
   @override
@@ -89,27 +151,33 @@ class _StatsScreenState extends State<StatsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!))
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(_error!, textAlign: TextAlign.center),
+                  ),
+                )
               : RefreshIndicator(
                   onRefresh: _loadTelemetry,
                   child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 30),
                     children: [
+                      _buildMetricSelector(),
                       const SizedBox(height: 20),
-                      _buildTabSelector(),
+                      _buildKpiRow(),
                       const SizedBox(height: 20),
-                      _buildChartSection(),
-                      const SizedBox(height: 30),
+                      _buildTrendCard(),
+                      const SizedBox(height: 20),
                       _buildAIAnalysisBox(),
-                      const SizedBox(height: 30),
                     ],
                   ),
                 ),
     );
   }
 
-  Widget _buildTabSelector() {
+  Widget _buildMetricSelector() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
+      margin: const EdgeInsets.symmetric(horizontal: 2),
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
@@ -117,127 +185,106 @@ class _StatsScreenState extends State<StatsScreen> {
       ),
       child: Row(
         children: [
-          _buildTabItem(title: 'Tension', index: 0),
-          _buildTabItem(title: 'Poids', index: 1),
-          _buildTabItem(title: 'Glycémie', index: 2),
+          for (var i = 0; i < _metrics.length; i++)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => setState(() => _selectedType = i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  decoration: BoxDecoration(
+                    color: _selectedType == i
+                        ? burgundyColor
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _metrics[i].label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _selectedType == i
+                          ? Colors.white
+                          : Colors.grey.shade600,
+                      fontWeight: _selectedType == i
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildTabItem({required String title, required int index}) {
-    final bool isSelected = _selectedType == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _selectedType = index;
-          });
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? burgundyColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.grey.shade600,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
+  Widget _buildKpiRow() {
+    final chrono = _chronological;
+    final current = _current;
+    final last = num.tryParse('${current.valueOf(chrono.last)}');
+    final prev = chrono.length > 1
+        ? num.tryParse('${current.valueOf(chrono[chrono.length - 2])}')
+        : null;
+    final lastSec = num.tryParse('${current.secondaryOf?.call(chrono.last)}');
+    final trendColor = _trendColor(prev?.toDouble(), last?.toDouble());
+    final arrow = trendColor == null
+        ? null
+        : trendColor == colorOk
+            ? Icons.arrow_downward
+            : Icons.arrow_upward;
+
+    return Row(
+      children: [
+        Expanded(
+          child: KpiCard(
+            icon: Icons.speed,
+            label: '${current.label} actuelle',
+            value: last == null
+                ? '—'
+                : '${_fmt(last)} ${current.unit}',
+            subtitle: arrow == null || prev == null
+                ? null
+                : 'Hier : ${_fmt(prev)} ${current.unit}',
           ),
         ),
-      ),
+        const SizedBox(width: 12),
+        if (lastSec != null && current.secondaryOf != null)
+          Expanded(
+            child: KpiCard(
+              icon: Icons.favorite_outline,
+              label: 'Valeur basse',
+              value: '${_fmt(lastSec)} ${current.unit}',
+              subtitle: 'Limite inférieure',
+            ),
+          ),
+      ],
     );
   }
 
-  Widget _buildChartSection() {
-    final values = _values;
-    return Container(
-      margin: const EdgeInsets.all(20),
-      padding: const EdgeInsets.all(20),
-      height: 300,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Évolution de la ${_titles[_selectedType]}',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${_telemetry.length} mesure${_telemetry.length > 1 ? 's' : ''} enregistrée${_telemetry.length > 1 ? 's' : ''}',
-            style: const TextStyle(color: Colors.grey, fontSize: 12),
-          ),
-          Expanded(
-            child: values.isEmpty
-                ? Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.show_chart,
-                        size: 80,
-                        color: Colors.grey.shade200,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Aucune donnée enregistrée',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        'Vos mesures apparaîtront ici.',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  )
-                : values.length == 1
-                    ? Center(
-                        child: Text(
-                          '${values.first}',
-                          style: TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.bold,
-                            color: burgundyColor,
-                          ),
-                        ),
-                      )
-                    : Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: CustomPaint(
-                          size: const Size.fromHeight(200),
-                          painter: _ChartPainter(values, burgundyColor),
-                        ),
-                      ),
-          ),
-        ],
+  Widget _buildTrendCard() {
+    final m = _current;
+    final points = _points(m, false);
+    final secondary = m.secondaryOf == null
+        ? null
+        : _points(m, true);
+    return ChartCardShell(
+      title: 'Évolution de la ${m.label.toLowerCase()}',
+      subtitle:
+          '${_chronological.length} mesure${_chronological.length > 1 ? 's' : ''} enregistrée${_chronological.length > 1 ? 's' : ''}',
+      child: TrendLineChart(
+        points: points,
+        unit: m.unit,
+        color: m.color,
+        secondaryPoints: secondary,
+        secondaryLegend: m.secondaryOf == null ? null : '${m.label} min',
       ),
     );
   }
 
   Widget _buildAIAnalysisBox() {
+    final hasData = _telemetry.isNotEmpty;
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: burgundyColor.withValues(alpha: 0.05),
@@ -250,7 +297,7 @@ class _StatsScreenState extends State<StatsScreen> {
           const SizedBox(width: 15),
           Expanded(
             child: Text(
-              _hasData
+              hasData
                   ? '${_telemetry.length} mesure${_telemetry.length > 1 ? 's' : ''} analysée${_telemetry.length > 1 ? 's' : ''} par l\'IA. '
                       'Les constantes sont traitées avant transmission à votre médecin.'
                   : 'En attente de vos premières mesures pour analyser vos tendances.',
@@ -264,69 +311,5 @@ class _StatsScreenState extends State<StatsScreen> {
         ],
       ),
     );
-  }
-}
-
-class _ChartPainter extends CustomPainter {
-  final List<num> values;
-  final Color color;
-
-  _ChartPainter(this.values, this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..color = color.withValues(alpha: 0.4)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          color.withValues(alpha: 0.25),
-          color.withValues(alpha: 0.0),
-        ],
-      ).createShader(Offset.zero & size);
-    final dotPaint = Paint()..color = color;
-
-    double minV = values.reduce((a, b) => a < b ? a : b).toDouble();
-    double maxV = values.reduce((a, b) => a > b ? a : b).toDouble();
-    if (maxV == minV) maxV = minV + 1;
-    final margin = (maxV - minV) * 0.12;
-
-    final points = <Offset>[];
-    for (var i = 0; i < values.length; i++) {
-      final x = size.width * i / (values.length - 1);
-      final y =
-          size.height - (size.height * (values[i].toDouble() - (minV - margin)) / (maxV + margin - (minV - margin)));
-      points.add(Offset(x, y.clamp(0.0, size.height)));
-    }
-
-    final line = Path()..moveTo(points.first.dx, points.first.dy);
-    for (final p in points.skip(1)) {
-      line.lineTo(p.dx, p.dy);
-    }
-    canvas.drawPath(line, linePaint);
-
-    final fill = Path.from(line)
-      ..lineTo(points.last.dx, size.height)
-      ..lineTo(points.first.dx, size.height)
-      ..close();
-    canvas.drawPath(fill, fillPaint);
-
-    for (final p in points) {
-      canvas.drawCircle(p, 3.5, dotPaint);
-      canvas.drawCircle(
-        p,
-        6,
-        Paint()..color = color.withValues(alpha: 0.2),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ChartPainter oldDelegate) {
-    return oldDelegate.values != values || oldDelegate.color != color;
   }
 }

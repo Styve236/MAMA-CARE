@@ -33,12 +33,14 @@ class UserModel {
     final user = Map<String, dynamic>.fromEntries(res.first.toColumnMap().entries);
     if (role == 'medecin') {
       await db.query(
-        'INSERT INTO doctors (user_id) VALUES (@userId)',
+        'INSERT INTO doctors (user_id) VALUES (@userId) '
+        'ON CONFLICT (user_id) DO NOTHING',
         substitutionValues: {'userId': user['id']},
       );
     } else if (role == 'patiente') {
       await db.query(
-        'INSERT INTO patients (user_id) VALUES (@userId)',
+        'INSERT INTO patients (user_id) VALUES (@userId) '
+        'ON CONFLICT (user_id) DO NOTHING',
         substitutionValues: {'userId': user['id']},
       );
     }
