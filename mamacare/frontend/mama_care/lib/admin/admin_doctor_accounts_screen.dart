@@ -516,11 +516,7 @@ class _AdminDoctorAccountsScreenState extends State<AdminDoctorAccountsScreen> {
         _changeDoctorStatus(doctor, 'disabled');
         break;
       case 'delete':
-        if (widget.onDelete != null) {
-          widget.onDelete!(doctor);
-        } else {
-          _showConfirmation('Supprimer le compte de ${doctor.name} ?');
-        }
+        _deleteDoctor(doctor);
         break;
       case 'temporary_key':
         _showMessage(
@@ -629,6 +625,57 @@ class _AdminDoctorAccountsScreenState extends State<AdminDoctorAccountsScreen> {
     }
   }
 
+  Future<void> _deleteDoctor(AdminDoctorAccount doctor) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Supprimer le compte',
+          style: TextStyle(color: Colors.red),
+        ),
+        content: Text(
+          'Supprimer définitivement le compte de ${doctor.name} ?\n\n'
+          'Tout le dossier médical, les rendez-vous, alertes, mesures et '
+          'messages associés seront définitivement supprimés. Cette action '
+          'est irréversible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _submitting = true);
+    try {
+      await ApiClient.adminDeleteUser(userId: doctor.id);
+      await fetchDoctors();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Le compte de ${doctor.name} a été supprimé.'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
   Future<void> fetchDoctors() async {
     try {
       final doctors = await ApiClient.adminDoctors();
@@ -676,28 +723,6 @@ class _AdminDoctorAccountsScreenState extends State<AdminDoctorAccountsScreen> {
       patientCount: (json['patient_count'] as num?)?.toInt() ?? 0,
       status: status,
     );
-  }
-
-  Future<void> _showConfirmation(String message) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Confirmer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
-      _showMessage('Action administrateur', 'Action confirmée.');
-    }
   }
 
   void _showMessage(String title, String message) {

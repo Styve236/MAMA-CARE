@@ -487,6 +487,100 @@ final _adminRouter = Router()
           body: jsonEncode({'error': 'Impossible d\'attribuer le médecin'}),
           headers: {'content-type': 'application/json'});
     }
+  })
+  ..delete('/users/<id>', (Request req, String id) async {
+    try {
+      final admin = _extractUser(req);
+      if (admin == null || admin['role'] != 'admin') {
+        return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final adminId = int.tryParse('${admin['id']}');
+      final userId = int.tryParse(id);
+      if (adminId == null) {
+        return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+            headers: {'content-type': 'application/json'});
+      }
+      if (userId == null) {
+        return Response(400,
+            body: jsonEncode({'error': 'Identifiant invalide'}),
+            headers: {'content-type': 'application/json'});
+      }
+      if (userId == adminId) {
+        return Response(400,
+            body: jsonEncode({
+              'error': 'Vous ne pouvez pas supprimer votre propre compte'
+            }),
+            headers: {'content-type': 'application/json'});
+      }
+
+      final db = Database();
+      await db.connect();
+      try {
+        final target = await db.query(
+            'SELECT id, email, role FROM users WHERE id = @userId',
+            substitutionValues: {'userId': userId});
+        if (target.isEmpty) {
+          return Response.notFound(
+              jsonEncode({'error': 'Compte introuvable'}),
+              headers: {'content-type': 'application/json'});
+        }
+        final targetRow = target.first.toColumnMap();
+        final role = targetRow['role'] as String? ?? '';
+        if (role == 'admin') {
+          return Response(400,
+              body: jsonEncode(
+                  {'error': 'Suppression d\'un compte administrateur impossible'}),
+              headers: {'content-type': 'application/json'});
+        }
+
+        final deleted = await db.connection.transaction((ctx) async {
+          if (role == 'medecin') {
+            await ctx.query('''
+              UPDATE patients
+              SET assigned_doctor_id = NULL, updated_at = NOW()
+              WHERE assigned_doctor_id =
+                    (SELECT id FROM doctors WHERE user_id = @userId)
+            ''', substitutionValues: {'userId': userId});
+          }
+          final rows = await ctx.query('''
+            DELETE FROM users
+            WHERE id = @userId AND role IN ('patiente', 'medecin')
+            RETURNING id, email, role
+          ''', substitutionValues: {'userId': userId});
+          if (rows.isEmpty) return null;
+          await ctx.query('''
+            INSERT INTO activity_logs
+              (user_id, action, resource_type, resource_id, details)
+            VALUES (@adminId, 'USER_DELETION', @role, @userId, @details)
+          ''', substitutionValues: {
+            'adminId': adminId,
+            'role': role,
+            'userId': userId,
+            'details': 'email=${targetRow['email']}',
+          });
+          return rows.first.toColumnMap();
+        });
+        if (deleted == null) {
+          return Response.notFound(
+              jsonEncode({'error': 'Compte introuvable'}),
+              headers: {'content-type': 'application/json'});
+        }
+        return Response.ok(jsonEncode(jsonSafe(deleted)),
+            headers: {'content-type': 'application/json'});
+      } finally {
+        await db.close();
+      }
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant invalide'}),
+          headers: {'content-type': 'application/json'});
+    } catch (error) {
+      developer.log('Erreur suppression compte: $error', level: 1000);
+      return Response.internalServerError(
+          body: jsonEncode({'error': 'Impossible de supprimer le compte'}),
+          headers: {'content-type': 'application/json'});
+    }
   });
 
 final router = _adminRouter;

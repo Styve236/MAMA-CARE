@@ -357,6 +357,10 @@ class ApiClient {
     await _patch('/api/admin/patients/$userId/status', {'status': status});
   }
 
+  static Future<void> adminDeleteUser({required String userId}) async {
+    await _delete('/api/admin/users/$userId');
+  }
+
   static Future<void> adminAssignDoctor({
     required String userId,
     int? doctorId,

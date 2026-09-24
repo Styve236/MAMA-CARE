@@ -270,6 +270,11 @@ class _AdminPatientAccountsScreenState
                 if (!inactive)
                   _actionButton(
                       'Désactiver', () => _action('disable', patient)),
+                _actionButton(
+                  'Supprimer',
+                  () => _action('delete', patient),
+                  destructive: true,
+                ),
               ],
             ),
           ],
@@ -290,6 +295,11 @@ class _AdminPatientAccountsScreenState
             if (!inactive)
               const PopupMenuItem(
                   value: 'suspend', child: Text('Suspendre')),
+            const PopupMenuItem(
+              value: 'delete',
+              child: Text('Supprimer',
+                  style: TextStyle(color: Colors.red)),
+            ),
           ],
         ),
       ),
@@ -352,6 +362,9 @@ class _AdminPatientAccountsScreenState
           _load();
         }
         break;
+      case 'delete':
+        await _confirmDelete(patient);
+        break;
     }
   }
 
@@ -401,6 +414,49 @@ class _AdminPatientAccountsScreenState
         SnackBar(
           content: Text('Compte de ${patient.name} mis à jour'),
           backgroundColor: burgundy,
+        ),
+      );
+      _load();
+    } on ApiException catch (error) {
+      if (mounted) _showMessage('Erreur', error.message);
+    }
+  }
+
+  Future<void> _confirmDelete(AdminPatientAccount patient) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Supprimer le compte',
+          style: TextStyle(color: Colors.red),
+        ),
+        content: Text(
+          'Supprimer définitivement le compte de ${patient.name} ?\n\n'
+          'Tout le dossier médical, les rendez-vous, alertes, mesures et '
+          'messages associés seront définitivement supprimés. Cette action '
+          'est irréversible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ApiClient.adminDeleteUser(userId: patient.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Le compte de ${patient.name} a été supprimé.'),
+          backgroundColor: Colors.red.shade700,
         ),
       );
       _load();
