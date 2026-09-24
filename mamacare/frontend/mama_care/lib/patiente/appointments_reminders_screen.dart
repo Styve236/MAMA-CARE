@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
 import '../shared/app_theme.dart';
+import '../shared/date_utils.dart';
 
 final List<String> _weekdays = const [
   'Lundi',
@@ -67,7 +68,7 @@ class AppointmentsRemindersScreen extends StatefulWidget {
 class _AppointmentsRemindersScreenState
     extends State<AppointmentsRemindersScreen> {
   static const Color burgundy = AppColors.burgundy;
-  List<Map<String, String>> _appointments = [];
+  List<Map<String, dynamic>> _appointments = [];
   List<Map<String, dynamic>> _reminders = [];
   bool _loading = true;
   String? _error;
@@ -76,13 +77,9 @@ class _AppointmentsRemindersScreenState
   @override
   void initState() {
     super.initState();
-    _appointments = List<Map<String, String>>.from(widget.appointments ?? const []);
+    _appointments = <Map<String, dynamic>>[];
     _reminders = List<Map<String, dynamic>>.from(widget.reminders ?? const []);
-    if (_appointments.isEmpty) {
-      _load();
-    } else {
-      _loading = false;
-    }
+    _load();
   }
 
   Future<void> _load() async {
@@ -91,7 +88,7 @@ class _AppointmentsRemindersScreenState
       final reminders = await ApiClient.patientReminders();
       if (!mounted) return;
       setState(() {
-        _appointments = rows.map(_formatAppointment).toList();
+        _appointments = rows;
         _reminders = reminders;
         _loading = false;
         _error = null;
@@ -103,25 +100,6 @@ class _AppointmentsRemindersScreenState
         _loading = false;
       });
     }
-  }
-
-  Map<String, String> _formatAppointment(Map<String, dynamic> row) {
-    final rawDate = row['appointment_date'];
-    final parsed = rawDate is String
-        ? DateTime.tryParse(rawDate)
-        : (rawDate is DateTime ? rawDate : null);
-    final dateLabel = parsed == null
-        ? '${rawDate ?? 'Date inconnue'}'
-        : _formatDateTime(parsed);
-    final timeLabel = parsed == null ? '' : _formatTimeOnly(parsed);
-    final doctor =
-        '${row['doctor_first_name'] ?? ''} ${row['doctor_last_name'] ?? ''}'
-            .trim();
-    return <String, String>{
-      'date': dateLabel,
-      'time': timeLabel,
-      'doctor': doctor.isEmpty ? 'Médecin non affecté' : doctor,
-    };
   }
 
   Future<void> _openCreateAppointment() async {
@@ -149,9 +127,11 @@ class _AppointmentsRemindersScreenState
       setState(() => _saving = false);
       final rows = await ApiClient.patientAppointments();
       if (!mounted) return;
-      setState(() => _appointments = rows.map(_formatAppointment).toList());
+      setState(() => _appointments = rows);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Rendez-vous enregistré')),
+        const SnackBar(
+          content: Text('Demande envoyée au médecin. En attente de réponse.'),
+        ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -442,7 +422,15 @@ class _AppointmentsRemindersScreenState
     );
   }
 
-  Widget _buildAppointmentCard(Map<String, String> apt) {
+  Widget _buildAppointmentCard(Map<String, dynamic> apt) {
+    final status = '${apt['status'] ?? 'scheduled'}';
+    final isPending = status == 'pending';
+    final isRescheduled = status == 'rescheduled';
+    final isRejected = status == 'rejected';
+    final doctor = '${apt['doctor_first_name'] ?? ''} '
+            '${apt['doctor_last_name'] ?? ''}'
+        .trim();
+    final notes = '${apt['notes'] ?? ''}';
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -451,23 +439,172 @@ class _AppointmentsRemindersScreenState
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: burgundy.withValues(alpha: 0.2)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.event_available, color: burgundy),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(apt['date'] ?? '',
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                if ((apt['time'] ?? '').isNotEmpty)
-                  Text('${apt['time']} - ${apt['doctor']}',
-                      style: TextStyle(color: Colors.grey.shade600)),
-              ],
-            ),
+          Row(
+            children: [
+              Icon(
+                isRejected
+                    ? Icons.event_busy
+                    : (isRescheduled
+                        ? Icons.event_repeat
+                        : (isPending
+                            ? Icons.event_available
+                            : Icons.event_available)),
+                color: _statusColor(status),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isRescheduled
+                          ? 'Nouvelle date proposée : '
+                              '${formatFullDate(apt['appointment_date'])}'
+                          : (isRejected
+                              ? 'Rendez-vous refusé '
+                                  '(${formatFullDate(apt['appointment_date'])})'
+                              : formatFullDate(apt['appointment_date'])),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    if (doctor.isNotEmpty)
+                      Text('Dr $doctor',
+                          style: TextStyle(color: Colors.grey.shade600)),
+                  ],
+                ),
+              ),
+              _statusChip(status),
+            ],
           ),
+          if (isRejected)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                notes.isEmpty || notes == 'null'
+                    ? 'Proposez un autre créneau.'
+                    : 'Motif : $notes',
+                style: TextStyle(
+                  color: Colors.red.shade700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          if (isPending)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                'En attente de la confirmation du médecin.',
+                style: TextStyle(
+                  color: Colors.orange.shade800,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          if (isRescheduled)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      notes.isEmpty || notes == 'null'
+                          ? 'Le médecin vous propose ce nouveau créneau.'
+                          : 'Message du médecin : $notes',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E7D32),
+                    ),
+                    onPressed: _saving ? null : () => _acceptProposed(apt),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: const Text('Accepter'),
+                  ),
+                ],
+              ),
+            ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _acceptProposed(Map<String, dynamic> apt) async {
+    setState(() => _saving = true);
+    try {
+      final id = (apt['id'] as num).toInt();
+      await ApiClient.patientAcceptAppointment(id);
+      if (!mounted) return;
+      setState(() => _saving = false);
+      final rows = await ApiClient.patientAppointments();
+      if (!mounted) return;
+      setState(() => _appointments = rows);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Rendez-vous confirmé !')),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'pending':
+        return Colors.orange;
+      case 'confirmed':
+        return const Color(0xFF2E7D32);
+      case 'rejected':
+        return Colors.red;
+      case 'rescheduled':
+        return burgundy;
+      default:
+        return burgundy;
+    }
+  }
+
+  Widget _statusChip(String status) {
+    String label;
+    Color color;
+    switch (status) {
+      case 'pending':
+        label = 'En attente';
+        color = Colors.orange;
+        break;
+      case 'confirmed':
+        label = 'Confirmé';
+        color = const Color(0xFF2E7D32);
+        break;
+      case 'rejected':
+        label = 'Refusé';
+        color = Colors.red;
+        break;
+      case 'rescheduled':
+        label = 'Nouvelle date proposée';
+        color = burgundy;
+        break;
+      default:
+        label = status;
+        color = Colors.grey;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
       ),
     );
   }

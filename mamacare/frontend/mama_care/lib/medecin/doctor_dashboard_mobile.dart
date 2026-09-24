@@ -8,8 +8,10 @@ import 'package:mama_care/medecin/doctor_alerts_center.dart';
 import 'package:mama_care/medecin/doctor_messages_list.dart';
 import 'package:mama_care/medecin/doctor_profile_screen.dart';
 import 'package:mama_care/medecin/widgets_patient_list_tab.dart';
+import 'package:mama_care/medecin/doctor_appointments_screen.dart';
 import '../shared/app_theme.dart';
 import '../shared/dashboard_charts.dart';
+import '../shared/date_utils.dart';
 
 class DoctorDashboardMobile extends StatefulWidget {
   const DoctorDashboardMobile({super.key});
@@ -27,6 +29,7 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
   List<Map<String, dynamic>> _alertsBySeverity = [];
   List<Map<String, dynamic>> _alertsTrend = [];
   List<Map<String, dynamic>> _patientsByWeeks = [];
+  List<Map<String, dynamic>> _appointmentRequests = [];
   bool _loading = true;
   String? _error;
   Timer? _refreshTimer;
@@ -53,12 +56,15 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
         ApiClient.doctorPatients(),
         ApiClient.doctorAlerts(),
         ApiClient.doctorStats(),
+        ApiClient.doctorAppointmentRequests(),
       ]);
       if (mounted) {
         final stats = results[2] as Map<String, dynamic>;
         setState(() {
           _patients = (results[0] as List).cast<Map<String, dynamic>>();
           _alerts = (results[1] as List).cast<Map<String, dynamic>>();
+          _appointmentRequests =
+              (results[3] as List).cast<Map<String, dynamic>>();
           _stats = {
             'patients': (stats['patients'] as num?)?.toInt() ?? _patients.length,
             'alerts': (stats['alerts'] as num?)?.toInt() ?? 0,
@@ -212,6 +218,21 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
           const SizedBox(height: 16),
           _buildStatsRow(),
           const SizedBox(height: 16),
+          if (_pendingRequests().isNotEmpty) ...[
+            _buildSectionHeader(
+              'Demandes de rendez-vous',
+              Icons.event_available,
+              onSeeAll: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const DoctorAppointmentsScreen(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ..._pendingRequests().take(3).map(_buildRequestCard),
+            const SizedBox(height: 8),
+          ],
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -278,6 +299,132 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
           ),
         ),
       ],
+    );
+  }
+
+  List<Map<String, dynamic>> _pendingRequests() {
+    return _appointmentRequests
+        .where((a) =>
+            '${a['status'] ?? ''}' == 'pending' ||
+            '${a['status'] ?? ''}' == 'rescheduled')
+        .toList();
+  }
+
+  Future<void> _refreshRequests() async {
+    try {
+      final rows = await ApiClient.doctorAppointmentRequests();
+      if (mounted) {
+        setState(() {
+          _appointmentRequests = rows.cast<Map<String, dynamic>>();
+        });
+      }
+    } on ApiException {
+      // Silencieux : le prochain rafraîchissement périodique retentera.
+    }
+  }
+
+  Future<void> _handleRequestAction(
+    Map<String, dynamic> a,
+    Function() action,
+  ) async {
+    await action();
+    await _refreshRequests();
+  }
+
+  Widget _buildRequestCard(Map<String, dynamic> a) {
+    final status = '${a['status'] ?? ''}';
+    final name =
+        '${a['first_name'] ?? ''} ${a['last_name'] ?? ''}'.trim();
+    final phone = '${a['patient_phone'] ?? ''}';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: burgundy.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.event_available, color: burgundy, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isEmpty ? 'Patiente' : name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    if (phone.isNotEmpty)
+                      Text('📞 $phone',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          )),
+                    Text(
+                      status == 'rescheduled'
+                          ? 'Proposition : ${formatFullDate(a['appointment_date'])}'
+                          : formatFullDate(a['appointment_date']),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF2E7D32),
+                  ),
+                  onPressed: () => _handleRequestAction(
+                    a,
+                    () => ApiClient.doctorAcceptAppointment(
+                        (a['id'] as num).toInt()),
+                  ),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Accepter'),
+                ),
+              ),
+              Expanded(
+                child: TextButton.icon(
+                  style:
+                      TextButton.styleFrom(foregroundColor: Colors.red),
+                  onPressed: () => _handleRequestAction(
+                    a,
+                    () => ApiClient.doctorRejectAppointment(
+                        (a['id'] as num).toInt()),
+                  ),
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Text('Refuser'),
+                ),
+              ),
+              Expanded(
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: burgundy,
+                  ),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DoctorAppointmentsScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.date_range, size: 18),
+                  label: const Text('Reprogrammer'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

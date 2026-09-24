@@ -5,6 +5,7 @@ import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/json_safe.dart';
 import 'package:backend/utils/gemini.dart';
+import 'package:backend/utils/dates_fr.dart';
 
 Map<String, dynamic>? _extractUser(Request req) {
   final auth = req.headers['authorization'];
@@ -742,9 +743,14 @@ final _patientRouter = Router()
     final db = Database();
     await db.connect();
     try {
-      final patient = await db.query('''SELECT p.id, d.id AS doctor_id
+      final patient = await db.query('''SELECT p.id, d.id AS doctor_id,
+          d.user_id AS doctor_user_id,
+          pu.id AS patient_user_id,
+          pu.first_name AS patient_first_name,
+          pu.last_name AS patient_last_name
           FROM patients p
           JOIN doctors d ON d.id = p.assigned_doctor_id
+          JOIN users pu ON pu.id = p.user_id
           WHERE p.user_id = @u''', substitutionValues: {'u': uid});
       if (patient.isEmpty) {
         return Response(409,
@@ -754,8 +760,8 @@ final _patientRouter = Router()
       }
       final row = patient.first.toColumnMap();
       final inserted = await db.query('''INSERT INTO appointments
-          (patient_id, doctor_id, appointment_date, duration_minutes, notes)
-          VALUES (@p, @d, @date, @dur, @n) RETURNING *''',
+          (patient_id, doctor_id, appointment_date, duration_minutes, notes, status)
+          VALUES (@p, @d, @date, @dur, @n, 'pending') RETURNING *''',
           substitutionValues: {
             'p': row['id'],
             'd': row['doctor_id'],
@@ -763,8 +769,95 @@ final _patientRouter = Router()
             'dur': duration,
             'n': notes,
           });
+      final patientName =
+          '${row['patient_first_name']} ${row['patient_last_name']}'.trim();
+      final dateLabel = formatAppointmentFr(parsedDate);
+      final motif = notes == null || notes.trim().isEmpty
+          ? ''
+          : ' Motif : ${notes.trim()}';
+      await db.query('''INSERT INTO notifications
+          (user_id, title, message, notification_type, data, is_sent, sent_at)
+          VALUES (@u, @t, @m, 'appointment', @data, TRUE, NOW())''',
+          substitutionValues: {
+        'u': row['doctor_user_id'],
+        't': 'Nouvelle demande de RDV',
+        'm': 'Nouvelle demande de rendez-vous de '
+            '${patientName.isEmpty ? 'votre patiente' : patientName} '
+            'pour le $dateLabel.$motif',
+        'data': jsonEncode({
+          'appointment_id': inserted.first[0],
+          'status': 'pending',
+        }),
+      });
       return Response(201,
           body: jsonEncode(jsonSafe(inserted.first.toColumnMap())),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..patch('/appointments/<id>/accept', (Request req, String id) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(
+          jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final aptId = int.tryParse(id);
+    if (aptId == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final appt = await db.query('''SELECT a.id, a.status, a.appointment_date,
+          d.user_id AS doctor_user_id,
+          pu.first_name AS patient_first_name,
+          pu.last_name AS patient_last_name
+          FROM appointments a
+          JOIN patients p ON p.id = a.patient_id
+          JOIN doctors d ON d.id = a.doctor_id
+          JOIN users pu ON pu.id = p.user_id
+          WHERE a.id = @id AND p.user_id = @u''',
+          substitutionValues: {
+        'id': aptId,
+        'u': int.parse('${user['id']}'),
+      });
+      if (appt.isEmpty) {
+        return Response(404,
+            body: jsonEncode({'error': 'Rendez-vous introuvable'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final row = appt.first.toColumnMap();
+      if ('${row['status']}' != 'rescheduled') {
+        return Response(409,
+            body: jsonEncode(
+                {'error': 'Aucune nouvelle proposition à accepter'}),
+            headers: {'content-type': 'application/json'});
+      }
+      await db.query('''UPDATE appointments
+          SET status = 'confirmed', updated_at = NOW()
+          WHERE id = @id''', substitutionValues: {'id': aptId});
+      final patientName =
+          '${row['patient_first_name']} ${row['patient_last_name']}'.trim();
+      await db.query('''INSERT INTO notifications
+          (user_id, title, message, notification_type, data, is_sent, sent_at)
+          VALUES (@u, @t, @m, 'appointment', @data, TRUE, NOW())''',
+          substitutionValues: {
+        'u': row['doctor_user_id'],
+        't': 'RDV confirmé',
+        'm': '${patientName.isEmpty ? 'La patiente' : patientName} a accepté '
+            'le rendez-vous du '
+            '${formatAppointmentFr(row['appointment_date'])}.',
+        'data': jsonEncode({'appointment_id': aptId, 'status': 'confirmed'}),
+      });
+      final updated = await db.query(
+          'SELECT * FROM appointments WHERE id = @id',
+          substitutionValues: {'id': aptId});
+      return Response.ok(
+          jsonEncode(jsonSafe(updated.first.toColumnMap())),
           headers: {'content-type': 'application/json'});
     } finally {
       await db.close();

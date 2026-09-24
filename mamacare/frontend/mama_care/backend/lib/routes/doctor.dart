@@ -4,6 +4,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/json_safe.dart';
+import 'package:backend/utils/dates_fr.dart';
 
 Map<String, dynamic>? _extractUser(Request req) {
   final auth = req.headers['authorization'];
@@ -462,6 +463,269 @@ final _doctorRouter = Router()
           substitutionValues: {'pid': pid, 'du': docUid});
       return Response.ok(jsonEncode({'status': 'ok'}),
           headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..get('/appointments/requests', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'medecin') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final docUid = int.parse('${user['id']}');
+    final db = Database();
+    await db.connect();
+    try {
+      final docRes = await db.query(
+          'SELECT id FROM doctors WHERE user_id = @uid',
+          substitutionValues: {'uid': docUid});
+      if (docRes.isEmpty) {
+        return Response.notFound(jsonEncode({'message': 'Doctor not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final docId = docRes.first[0];
+      final rows = await db.query('''SELECT a.id, a.appointment_date,
+          a.duration_minutes, a.status, a.notes, a.created_at,
+          u.id AS patient_user_id, u.first_name, u.last_name,
+          u.phone AS patient_phone, p.id AS patient_id, p.pregnancy_weeks
+          FROM appointments a
+          JOIN patients p ON p.id = a.patient_id
+          JOIN users u ON u.id = p.user_id
+          WHERE a.doctor_id = @d
+          ORDER BY a.appointment_date DESC''', substitutionValues: {'d': docId});
+      return Response.ok(jsonEncode(
+          rows.map((r) => jsonSafe(r.toColumnMap())).toList()),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..patch('/appointments/<id>/accept', (Request req, String id) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'medecin') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final docUid = int.parse('${user['id']}');
+    final aptId = int.tryParse(id);
+    if (aptId == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final docRes = await db.query(
+          'SELECT id FROM doctors WHERE user_id = @uid',
+          substitutionValues: {'uid': docUid});
+      if (docRes.isEmpty) {
+        return Response.notFound(jsonEncode({'message': 'Doctor not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final changed = await db.query('''UPDATE appointments
+          SET status = 'confirmed', updated_at = NOW()
+          WHERE id = @id AND doctor_id = @d
+          RETURNING id, appointment_date, status''',
+          substitutionValues: {'id': aptId, 'd': docRes.first[0]});
+      if (changed.isEmpty) {
+        return Response(404,
+            body: jsonEncode({'error': 'Rendez-vous introuvable'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final info = await db.query('''SELECT p.user_id AS patient_user_id,
+          pu.first_name, pu.last_name
+          FROM appointments a
+          JOIN patients p ON p.id = a.patient_id
+          JOIN users pu ON pu.id = p.user_id
+          WHERE a.id = @id''', substitutionValues: {'id': aptId});
+      final c = info.first.toColumnMap();
+      final patientName =
+          '${c['first_name']} ${c['last_name']}'.trim();
+      await db.query('''INSERT INTO notifications
+          (user_id, title, message, notification_type, data, is_sent, sent_at)
+          VALUES (@u, @t, @m, 'appointment', @data, TRUE, NOW())''',
+          substitutionValues: {
+        'u': c['patient_user_id'],
+        't': 'Rendez-vous confirmé',
+        'm': 'Votre médecin a confirmé votre rendez-vous du '
+            '${formatAppointmentFr(changed.first[1])}.',
+        'data': jsonEncode({'appointment_id': aptId, 'status': 'confirmed'}),
+      });
+      return Response.ok(jsonEncode({
+        'id': aptId,
+        'status': 'confirmed',
+        'patient_name': patientName,
+      }), headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..patch('/appointments/<id>/reject', (Request req, String id) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'medecin') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final docUid = int.parse('${user['id']}');
+    final aptId = int.tryParse(id);
+    if (aptId == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    String? reason;
+    final raw = await req.readAsString();
+    if (raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) {
+          reason = (decoded['message'] as String?)?.trim();
+        }
+      } on FormatException {
+        // Corps malformé : on le traite comme aucun motif.
+      }
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final docRes = await db.query(
+          'SELECT id FROM doctors WHERE user_id = @uid',
+          substitutionValues: {'uid': docUid});
+      if (docRes.isEmpty) {
+        return Response.notFound(jsonEncode({'message': 'Doctor not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final changed = await db.query('''UPDATE appointments
+          SET status = 'rejected', notes = COALESCE(@reason, notes),
+              updated_at = NOW()
+          WHERE id = @id AND doctor_id = @d
+          RETURNING id, appointment_date, status''',
+          substitutionValues: {
+        'id': aptId,
+        'd': docRes.first[0],
+        'reason': reason,
+      });
+      if (changed.isEmpty) {
+        return Response(404,
+            body: jsonEncode({'error': 'Rendez-vous introuvable'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final info = await db.query('''SELECT p.user_id AS patient_user_id
+          FROM appointments a JOIN patients p ON p.id = a.patient_id
+          WHERE a.id = @id''', substitutionValues: {'id': aptId});
+      final c = info.first.toColumnMap();
+      final suffix =
+          reason == null || reason.isEmpty ? '.' : ' Motif : $reason';
+      await db.query('''INSERT INTO notifications
+          (user_id, title, message, notification_type, data, is_sent, sent_at)
+          VALUES (@u, @t, @m, 'appointment', @data, TRUE, NOW())''',
+          substitutionValues: {
+        'u': c['patient_user_id'],
+        't': 'Rendez-vous refusé',
+        'm': 'Votre médecin a refusé la demande de rendez-vous du '
+            '${formatAppointmentFr(changed.first[1])}$suffix',
+        'data': jsonEncode({'appointment_id': aptId, 'status': 'rejected'}),
+      });
+      return Response.ok(jsonEncode({'id': aptId, 'status': 'rejected'}),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..patch('/appointments/<id>/reschedule', (Request req, String id) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'medecin') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final docUid = int.parse('${user['id']}');
+    final aptId = int.tryParse(id);
+    if (aptId == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Identifiant invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await req.readAsString());
+    } on FormatException {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    if (decoded is! Map<String, dynamic>) {
+      return Response(400,
+          body: jsonEncode({'error': 'JSON invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final newDate = DateTime.tryParse('${decoded['newDate']}');
+    if (newDate == null) {
+      return Response(400,
+          body: jsonEncode({'error': 'Date invalide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    if (newDate.isBefore(DateTime.now().add(const Duration(minutes: 15)))) {
+      return Response(400,
+          body: jsonEncode({'error': 'La nouvelle date doit être dans le futur'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final message = (decoded['message'] as String?)?.trim();
+    final db = Database();
+    await db.connect();
+    try {
+      final docRes = await db.query(
+          'SELECT id FROM doctors WHERE user_id = @uid',
+          substitutionValues: {'uid': docUid});
+      if (docRes.isEmpty) {
+        return Response.notFound(jsonEncode({'message': 'Doctor not found'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final info = await db.query('''SELECT a.appointment_date AS old_date,
+          p.user_id AS patient_user_id
+          FROM appointments a JOIN patients p ON p.id = a.patient_id
+          WHERE a.id = @id''', substitutionValues: {'id': aptId});
+      if (info.isEmpty) {
+        return Response(404,
+            body: jsonEncode({'error': 'Rendez-vous introuvable'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final c = info.first.toColumnMap();
+      final changed = await db.query('''UPDATE appointments
+          SET status = 'rescheduled', appointment_date = @nd,
+              notes = COALESCE(@reason, notes), updated_at = NOW()
+          WHERE id = @id AND doctor_id = @d
+          RETURNING id, appointment_date, status, notes''',
+          substitutionValues: {
+        'id': aptId,
+        'd': docRes.first[0],
+        'nd': newDate.toUtc(),
+        'reason': message,
+      });
+      if (changed.isEmpty) {
+        return Response(404,
+            body: jsonEncode({'error': 'Rendez-vous introuvable'}),
+            headers: {'content-type': 'application/json'});
+      }
+      final suffix =
+          message == null || message.isEmpty ? '' : ' $message';
+      await db.query('''INSERT INTO notifications
+          (user_id, title, message, notification_type, data, is_sent, sent_at)
+          VALUES (@u, @t, @m, 'appointment', @data, TRUE, NOW())''',
+          substitutionValues: {
+        'u': c['patient_user_id'],
+        't': 'Nouvelle date de RDV proposée',
+        'm': 'Le médecin est indisponible à la date demandée et vous propose '
+            'le ${formatAppointmentFr(newDate)} au lieu de '
+            '${formatAppointmentFr(c['old_date'])}.$suffix',
+        'data': jsonEncode({'appointment_id': aptId, 'status': 'rescheduled'}),
+      });
+      return Response.ok(jsonEncode({
+        'id': aptId,
+        'status': 'rescheduled',
+        'appointment_date': '${changed.first[1]}',
+      }), headers: {'content-type': 'application/json'});
     } finally {
       await db.close();
     }

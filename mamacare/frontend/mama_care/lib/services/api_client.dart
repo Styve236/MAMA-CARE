@@ -256,6 +256,39 @@ class ApiClient {
     });
   }
 
+  static Future<Map<String, dynamic>> patientAcceptAppointment(int id) {
+    return _patchObject('/api/patient/appointments/$id/accept', {});
+  }
+
+  static Future<List<Map<String, dynamic>>> doctorAppointmentRequests() async {
+    final response = await _get('/api/doctor/appointments/requests');
+    return response.cast<Map<String, dynamic>>();
+  }
+
+  static Future<Map<String, dynamic>> doctorAcceptAppointment(int id) {
+    return _patchObject('/api/doctor/appointments/$id/accept', {});
+  }
+
+  static Future<Map<String, dynamic>> doctorRejectAppointment(
+    int id, {
+    String? reason,
+  }) {
+    return _patchObject('/api/doctor/appointments/$id/reject', {
+      if (reason != null && reason.trim().isNotEmpty) 'message': reason,
+    });
+  }
+
+  static Future<Map<String, dynamic>> doctorRescheduleAppointment(
+    int id,
+    DateTime newDate, {
+    String? reason,
+  }) {
+    return _patchObject('/api/doctor/appointments/$id/reschedule', {
+      'newDate': newDate.toUtc().toIso8601String(),
+      if (reason != null && reason.trim().isNotEmpty) 'message': reason,
+    });
+  }
+
   static Future<int> patientMessageUnreadCount() async {
     final response = await _getObject('/api/patient/messages/unread-count');
     return (response['count'] as num?)?.toInt() ?? 0;
@@ -426,6 +459,39 @@ class ApiClient {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw ApiException(_errorMessage(response));
       }
+    } on ApiException {
+      rethrow;
+    } on FormatException {
+      throw const ApiException('Réponse invalide du serveur');
+    } catch (_) {
+      throw const ApiException(
+        'Serveur indisponible. Vérifiez que le backend est démarré.',
+      );
+    }
+  }
+
+  static Future<Map<String, dynamic>> _patchObject(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$_baseUrl$path'),
+        headers: {
+          'content-type': 'application/json',
+          if (_token != null) 'authorization': 'Bearer $_token',
+        },
+        body: jsonEncode(body),
+      );
+      _ensureJsonResponse(response);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiException(_errorMessage(response));
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw const ApiException('Réponse JSON invalide du serveur');
+      }
+      return decoded;
     } on ApiException {
       rethrow;
     } on FormatException {
