@@ -382,12 +382,13 @@ class _AdminActivityLogScreenState extends State<AdminActivityLogScreen> {
   }
 
   String _formatDate(DateTime date) {
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
+    final local = date.toLocal();
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
 
-    return '$day/$month/${date.year}\n$hour:$minute';
+    return '$day/$month/${local.year}\n$hour:$minute';
   }
 
   BoxDecoration _cardDecoration() {

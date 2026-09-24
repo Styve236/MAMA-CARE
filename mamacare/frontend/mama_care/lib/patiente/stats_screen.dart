@@ -109,7 +109,8 @@ class _StatsScreenState extends State<StatsScreen> {
   String _shortDate(Object? value) {
     final parsed = DateTime.tryParse('$value');
     if (parsed == null) return '';
-    return '${parsed.day}/${parsed.month}';
+    final local = parsed.toLocal();
+    return '${local.day}/${local.month}';
   }
 
   List<ChartPoint> _points(_MetricDefinition m, bool secondary) {

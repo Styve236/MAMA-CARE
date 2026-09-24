@@ -136,7 +136,7 @@ class _DashboardState extends State<Dashboard> {
         lastGlycemia = '${latestTelemetry?['blood_glucose'] ?? '--'}';
         nextAppointmentDate = upcomingAppointment == null
             ? 'Aucun rendez-vous prévu'
-            : '${upcomingAppointment['appointment_date'] ?? 'Date inconnue'}';
+            : formatFullDate(upcomingAppointment['appointment_date']);
         doctorName = upcomingAppointment == null
             ? 'En attente d’affectation'
             : '${upcomingAppointment['doctor_first_name'] ?? ''} ${upcomingAppointment['doctor_last_name'] ?? ''}'.trim();

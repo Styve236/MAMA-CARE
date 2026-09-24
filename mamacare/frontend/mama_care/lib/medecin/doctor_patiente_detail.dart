@@ -59,10 +59,11 @@ class _DoctorPatienteDetailState extends State<DoctorPatienteDetail> {
     if (value == null) return '';
     final parsed = DateTime.tryParse('$value');
     if (parsed == null) return '$value';
-    return '${parsed.day.toString().padLeft(2, '0')}/'
-        '${parsed.month.toString().padLeft(2, '0')}  '
-        '${parsed.hour.toString().padLeft(2, '0')}:'
-        '${parsed.minute.toString().padLeft(2, '0')}';
+    final local = parsed.toLocal();
+    return '${local.day.toString().padLeft(2, '0')}/'
+        '${local.month.toString().padLeft(2, '0')}  '
+        '${local.hour.toString().padLeft(2, '0')}:'
+        '${local.minute.toString().padLeft(2, '0')}';
   }
 
   Map<String, dynamic> _parseDetails(Object? value) {
