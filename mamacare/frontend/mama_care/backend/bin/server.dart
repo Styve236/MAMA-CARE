@@ -38,6 +38,13 @@ void main(List<String> args) async {
   Logger.root.onRecord.listen(
       (rec) => developer.log('${rec.level.name}: ${rec.time}: ${rec.message}'));
 
+  final jwtSecret = Env.get('JWT_SECRET');
+  if (jwtSecret == null || jwtSecret.length < 32) {
+    log.shout(
+        'FATAL: JWT_SECRET manquant ou trop court (32 caractères minimum). '
+        'Configurer la variable d\'environnement JWT_SECRET puis relancer.');
+    exit(1);
+  }
   final db = Database();
   await db.connect();
 

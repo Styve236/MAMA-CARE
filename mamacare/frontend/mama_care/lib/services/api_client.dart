@@ -76,6 +76,13 @@ class ApiClient {
   }
 
   static Future<void> logout() async {
+    if (isLoggedIn) {
+      try {
+        await _post('/api/auth/logout', {});
+      } catch (_) {
+        // Meilleur effort : la déconnexion locale doit toujours réussir.
+      }
+    }
     _token = null;
     _user = null;
     await _persistSession();
@@ -113,10 +120,6 @@ class ApiClient {
       'lastName': lastName,
       'phone': phone,
     });
-    _token = response['token'] as String?;
-    final user = response['user'];
-    if (user is Map<String, dynamic>) _user = user;
-    await _persistSession();
     return response;
   }
 

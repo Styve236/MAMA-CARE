@@ -13,6 +13,7 @@ Map<String, dynamic>? _extractUser(Request req) {
   final token = auth.substring(7);
   final jwt = JwtService();
   final payload = jwt.verify(token);
+  if (payload == null || payload['status'] != 'active') return null;
   return payload;
 }
 

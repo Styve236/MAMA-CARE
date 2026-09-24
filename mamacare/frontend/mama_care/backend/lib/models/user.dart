@@ -13,6 +13,7 @@ class UserModel {
   }
 
   Future<Map<String, dynamic>> createUser({required String email, required String password, required String role, String? firstName, String? lastName, String? phone}) async {
+    final safeRole = role == 'patiente' ? role : 'patiente';
     final uuid = Uuid().v4();
     final passwordHash = HashService.hashPassword(password);
     final res = await db.query(
@@ -26,18 +27,12 @@ class UserModel {
         'firstName': firstName,
         'lastName': lastName,
         'phone': phone,
-        'role': role,
-        'status': role == 'patiente' ? 'pending' : 'active'
+        'role': safeRole,
+        'status': safeRole == 'patiente' ? 'pending' : 'active'
       }
     );
     final user = Map<String, dynamic>.fromEntries(res.first.toColumnMap().entries);
-    if (role == 'medecin') {
-      await db.query(
-        'INSERT INTO doctors (user_id) VALUES (@userId) '
-        'ON CONFLICT (user_id) DO NOTHING',
-        substitutionValues: {'userId': user['id']},
-      );
-    } else if (role == 'patiente') {
+    if (safeRole == 'patiente') {
       await db.query(
         'INSERT INTO patients (user_id) VALUES (@userId) '
         'ON CONFLICT (user_id) DO NOTHING',

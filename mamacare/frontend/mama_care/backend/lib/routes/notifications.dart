@@ -10,7 +10,9 @@ import 'package:backend/utils/json_safe.dart';
 Map<String, dynamic>? _user(Request request) {
   final authorization = request.headers['authorization'];
   if (authorization == null || !authorization.startsWith('Bearer ')) return null;
-  return JwtService().verify(authorization.substring(7));
+  final payload = JwtService().verify(authorization.substring(7));
+  if (payload == null || payload['status'] != 'active') return null;
+  return payload;
 }
 
 Response _json(int status, Object body) => Response(

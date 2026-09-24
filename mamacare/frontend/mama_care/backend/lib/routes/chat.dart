@@ -25,7 +25,9 @@ Map<String, dynamic>? _extractUser(Request req) {
   if (auth == null || !auth.startsWith('Bearer ')) return null;
   final token = auth.substring(7);
   final jwt = JwtService();
-  return jwt.verify(token);
+  final payload = jwt.verify(token);
+  if (payload == null || payload['status'] != 'active') return null;
+  return payload;
 }
 
 final _chatRouter = Router()
