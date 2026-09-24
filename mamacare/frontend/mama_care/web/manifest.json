@@ -1,11 +1,14 @@
 {
     "name": "Mamacare",
     "short_name": "Mamacare",
-    "start_url": ".",
+    "id": "/",
+    "start_url": "/",
+    "scope": "/",
     "display": "standalone",
     "background_color": "#FFFFFF",
     "theme_color": "#800020",
     "description": "Mamacare — suivi de grossesse intelligent avec assistance IA pour patientes, médecins et administrateurs.",
+    "lang": "fr",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
