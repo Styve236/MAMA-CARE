@@ -33,13 +33,27 @@ Tu analyses les constantes saisies par une patiente pour :
    grave ou sur le point de faire un malaise ;
 2. PRÉALERTER son médecin avec une synthèse concise.
 Retourne UNIQUEMENT du JSON valide, sans texte autour, au format :
-{"severity":"critical|warning|normal","status":"bonne|preoccupant|grave|malaise","summary":"synthèse pour le médecin","patient_message":"message rassurant et préventif pour la patiente","recommendations":["...max 3 courtes..."]}
+{"severity":"critical|warning|normal","status":"bonne|preoccupant|grave|malaise","summary":"synthèse pour le médecin","patient_message":"message rassurant et préventif pour la patiente","recommendations":["2 à 3 actions courtes toujours non vides"]}
 
-Repères (grossesse) :
+Recommandations ("recommendations") : TOUJOURS 2 à 3 actions courtes et
+concrètes, adaptées au niveau détecté :
+- critical / grave / malaise : consignes d'urgence (contacter le médecin
+  immédiatement, se rendre aux urgences si l'état s'aggrave, s'allonger et ne
+  pas rester seule, boire une boisson sucrée si risque d'hypoglycémie…) ;
+- warning / preoccupant : actions précises pour revenir à la normale (repos,
+  refaire une mesure dans 1 à 2 heures, s'hydrater, prévenir le médecin si
+  cela persiste…) ;
+- normal / bonne : conseils de prévention simples pour que l'état ne s'aggrave
+  pas (continuer les mesures régulières, bien dormir, boire assez d'eau,
+  alimentation équilibrée…).
+La liste "recommendations" ne doit JAMAIS être vide ni vague.
+
+Repères (grossesse) — les valeurs saisies par la patiente sont en g/L pour la
+glycémie, °C pour la température, mmHg pour la tension :
 - Tension artérielle dangereuse : systolique >= 160 ou diastolique >= 110 (critical) ;
   préoccupante : systolique >= 140 ou diastolique >= 90 (warning) ; hypotension : systolique < 90 (warning/malaise).
 - Rythme cardiaque : hors 60-100 (warning), hors 50-110 (critical).
-- Glycémie : >= 7.0 (warning), >= 11.1 (critical) ; <= 3.9 (critical, risque de malaise).
+- Glycémie : >= 1.26 g/L (warning), >= 2.0 g/L (critical) ; <= 0.6 g/L (critical, risque de malaise).
 - Température : >= 38.0 (warning), >= 38.5 (critical).
 - Risque de malaise si : hypoglycémie (< 3.9) OU hypotension marquée OU combinaison
   glycémie basse + tension basse ; et si la patiente signale vertiges, malaise, sueurs,
@@ -114,13 +128,24 @@ préventif, sans jamais annoncer un diagnostic.
         // L'IA ne peut qu'ALOURDIR le niveau d'urgence par rapport aux règles
         // locales : jamais le masquer (sécurité).
         final ia = _normalizeParsed(parsed);
+        final finalStatus = _statusFor(local, ia);
+        final finalMalaise =
+            local['risk_of_malaise'] == true || ia['risk_of_malaise'] == true;
+        final iaRecs = (ia['recommendations'] as List? ?? [])
+            .map((e) => '$e'.trim())
+            .where((e) => e.isNotEmpty)
+            .take(3)
+            .toList();
         return {
           'severity': _maxSeverity(local, ia),
-          'status': _statusFor(local, ia),
+          'status': finalStatus,
           'summary': ia['summary'],
           'patient_message': ia['patient_message'],
-          'recommendations': ia['recommendations'],
-          'risk_of_malaise': local['risk_of_malaise'] || ia['risk_of_malaise'],
+          'recommendations': iaRecs.isEmpty
+              ? recommendationsFor(finalStatus,
+                  riskOfMalaise: finalMalaise)
+              : iaRecs,
+          'risk_of_malaise': finalMalaise,
         };
       }
     }
@@ -195,17 +220,17 @@ Map<String, dynamic> ruleBasedAnalysis(
     escalate('warning', to: 'preoccupant');
   }
   if ((sys ?? 0) != 0 && (dia ?? 0) != 0 && sys! < 100 && dia! < 65) {
-    if (glucose != null && glucose <= 4.5) {
+    if (glucose != null && glucose <= 0.7) {
       riskOfMalaise = true;
       escalate('critical', to: 'malaise');
     }
   }
   if (glucose != null) {
-    if (glucose >= 11.1) {
+    if (glucose >= 2.0) {
       escalate('critical', to: 'grave');
-    } else if (glucose >= 7.0) {
+    } else if (glucose >= 1.26) {
       escalate('warning', to: 'preoccupant');
-    } else if (glucose <= 3.9) {
+    } else if (glucose <= 0.6) {
       riskOfMalaise = true;
       escalate('critical', to: 'malaise');
     }
@@ -252,19 +277,7 @@ Map<String, dynamic> ruleBasedAnalysis(
   }
   if (riskOfMalaise) status = 'malaise';
 
-  final recommendations = <String>[];
-  if (status == 'bonne') {
-    recommendations.add('Continuez vos mesures régulières.');
-    recommendations.add('Reposez-vous suffisamment et buvez de l\'eau.');
-  } else {
-    recommendations.add('Contactez votre médecin référent rapidement.');
-    if (riskOfMalaise) {
-      recommendations
-          .add('En cas de malaise avéré : allongez-vous et appelez les secours (144).');
-    } else if (severity == 'critical') {
-      recommendations.add('Direction les urgences si les symptômes s\'aggravent.');
-    }
-  }
+  final recommendations = recommendationsFor(status, riskOfMalaise: riskOfMalaise);
 
   return {
     'severity': severity,
@@ -274,6 +287,38 @@ Map<String, dynamic> ruleBasedAnalysis(
     'recommendations': recommendations.take(3).toList(),
     'risk_of_malaise': riskOfMalaise,
   };
+}
+
+/// Recommandations par défaut, adaptées à l'état détecté : critiques en cas de
+/// danger, de suivi en cas de signe préoccupant, de prévention quand tout va
+/// bien (pour que l'état ne s'aggrave pas). Jamais vide.
+List<String> recommendationsFor(String status, {bool riskOfMalaise = false}) {
+  switch (status) {
+    case 'malaise':
+      return [
+        'Asseyez-vous ou allongez-vous immédiatement et ne restez pas seule.',
+        'Buvez une boisson sucrée si vous le pouvez (glycémie basse).',
+        'Appelez votre médecin ou les urgences (144) sans attendre.',
+      ];
+    case 'grave':
+      return [
+        'Contactez votre médecin référent dès maintenant.',
+        'Ne restez pas seule et surveillez l\'évolution de vos symptômes.',
+        'Rendez-vous aux urgences si l\'état s\'aggrave.',
+      ];
+    case 'preoccupant':
+      return [
+        'Reposez-vous et refaites une mesure dans 1 à 2 heures.',
+        'Buvez de l\'eau et évitez les efforts physiques.',
+        'Prévenez votre médecin si les valeurs persistent ou s\'aggravent.',
+      ];
+    default:
+      return [
+        'Continuez vos mesures régulières à heures fixes.',
+        'Dormez suffisamment et buvez au moins 1,5 L d\'eau par jour.',
+        'Gardez une alimentation équilibrée et surveillez votre poids pour éviter que votre état ne s\'aggrave.',
+      ];
+  }
 }
 
 double? _num(Object? value) {

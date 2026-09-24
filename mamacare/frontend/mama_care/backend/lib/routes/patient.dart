@@ -377,14 +377,23 @@ final _patientRouter = Router()
           // détails non JSON : on ignore
         }
       }
+      final status = '${parsed['status'] ?? row['severity'] ?? 'bonne'}';
+      final recs = (parsed['recommendations'] as List? ?? [])
+          .map((e) => '$e'.trim())
+          .where((e) => e.isNotEmpty)
+          .take(3)
+          .toList();
       return Response.ok(
           jsonEncode({
-            'status': parsed['status'] ?? 'preoccupant',
+            'status': status,
             'severity': parsed['severity'] ?? row['severity'],
             'summary': row['message'] ?? parsed['summary'] ?? '',
             'patient_message':
                 parsed['patient_message'] ?? parsed['summary'] ?? '',
-            'recommendations': parsed['recommendations'] ?? [],
+            'recommendations': recs.isEmpty
+                ? recommendationsFor(status,
+                    riskOfMalaise: parsed['risk_of_malaise'] == true)
+                : recs,
             'telemetry': parsed['telemetry'],
             'patient_name': parsed['patient_name'],
             'analyzed_at': row['created_at'],

@@ -349,6 +349,10 @@ class _DashboardState extends State<Dashboard> {
     final message = noAnalysis
         ? '${state['message']}'
         : '${state['patient_message'] ?? state['summary'] ?? ''}';
+    final recs = (state['recommendations'] as List? ?? [])
+        .map((e) => '$e'.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
 
     return Container(
       width: double.infinity,
@@ -401,6 +405,33 @@ class _DashboardState extends State<Dashboard> {
                 height: 1.4,
               ),
             ),
+          ],
+          if (!noAnalysis && recs.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Divider(color: Colors.white24, thickness: 1),
+            const SizedBox(height: 6),
+            for (final rec in recs)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.check_circle_outline,
+                        color: iconColor, size: 16),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        rec,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ],
       ),
