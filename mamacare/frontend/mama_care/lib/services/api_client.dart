@@ -90,6 +90,14 @@ class ApiClient {
     return (response['reply'] as String?) ?? 'Aucune réponse de l\'assistant.';
   }
 
+  static Future<List<Map<String, dynamic>>> patientChatHistory() async {
+    final response = await _get('/api/chat/history');
+    return response.cast<Map<String, dynamic>>();
+  }
+
+  static Future<Map<String, dynamic>> patientHealthState() =>
+      _getObject('/api/patient/health-state');
+
   static Future<Map<String, dynamic>> register({
     required String email,
     required String password,

@@ -213,14 +213,23 @@ final _patientRouter = Router()
     }
     final body = decodedBody;
 
+    final validationError = _validateTelemetry(body);
+    if (validationError != null) {
+      return Response(400,
+          body: jsonEncode({'error': validationError}),
+          headers: {'content-type': 'application/json'});
+    }
+
     final db = Database();
     await db.connect();
     try {
       final patientRes = await db.query(
         'SELECT p.id, p.assigned_doctor_id, p.pregnancy_weeks, p.blood_type, '
         'p.medical_conditions, p.allergies, '
+        'pu.first_name AS patient_first_name, pu.last_name AS patient_last_name, pu.phone AS patient_phone, '
         'du.id AS doctor_user_id, d.id AS doctor_id '
         'FROM patients p '
+        'JOIN users pu ON pu.id = p.user_id '
         'LEFT JOIN doctors d ON d.id = p.assigned_doctor_id '
         'LEFT JOIN users du ON du.id = d.user_id '
         'WHERE p.user_id = @uid',
@@ -245,7 +254,6 @@ final _patientRouter = Router()
       });
       final telemetryRow = jsonSafe(inserted.first.toColumnMap()) as Map<String, dynamic>;
 
-      Map<String, dynamic>? analysis;
       final doctorId = patientRow['assigned_doctor_id'];
       final profile = {
         'pregnancy_weeks': patientRow['pregnancy_weeks'],
@@ -253,31 +261,68 @@ final _patientRouter = Router()
         'medical_conditions': patientRow['medical_conditions'],
         'allergies': patientRow['allergies'],
       };
-      analysis = await analyzeTelemetry(profile, telemetryRow);
+      final analysis = await analyzeTelemetry(profile, telemetryRow);
+
       if (analysis != null && doctorId != null) {
-        await db.query(
-          '''INSERT INTO alerts (doctor_id, patient_id, alert_type, severity, message, details)
-             VALUES (@d, @p, 'ia_assessment', @s, @m, @det)''',
-          substitutionValues: {
-            'd': doctorId,
-            'p': patientId,
-            's': analysis['severity'],
-            'm': analysis['summary'],
-            'det': jsonEncode(analysis),
-          },
-        );
-        final doctorUserId = patientRow['doctor_user_id'];
-        if (doctorUserId != null) {
-          await db.query(
-            '''INSERT INTO notifications (user_id, title, message, notification_type, data)
-               VALUES (@u, @t, @m, 'alert', @data)''',
-            substitutionValues: {
-              'u': doctorUserId,
-              't': 'Nouvelle alerte IA — patiente ${analysis['severity']}',
-              'm': analysis['summary'],
-              'data': jsonEncode(analysis),
-            },
+        final severity = '${analysis['severity'] ?? 'normal'}';
+        final isAlertWorthy = severity != 'normal' ||
+            analysis['risk_of_malaise'] == true;
+        if (isAlertWorthy) {
+          final patientName = [
+            patientRow['patient_first_name'],
+            patientRow['patient_last_name'],
+          ]
+              .whereType<String>()
+              .where((v) => v.isNotEmpty)
+              .join(' ');
+          final patientPhone =
+              '${patientRow['patient_phone'] ?? ''}' == ''
+                  ? 'Non renseigné'
+                  : '${patientRow['patient_phone']}';
+
+          // Anti-spam : pas de nouvelle alerte identique dans les 10 dernières
+          // minutes pour la même patiente (évite le flood de notifications).
+          final recent = await db.query(
+            '''SELECT 1 FROM alerts
+               WHERE patient_id = @p AND severity = @s
+                 AND alert_type = 'ia_assessment'
+                 AND created_at > NOW() - INTERVAL '10 minutes' LIMIT 1''',
+            substitutionValues: {'p': patientId, 's': severity},
           );
+          if (recent.isEmpty) {
+            final details = jsonEncode({
+              ...analysis,
+              'patient_name': patientName,
+              'patient_phone': patientPhone,
+              'telemetry': telemetryRow,
+              'pregnancy_weeks': patientRow['pregnancy_weeks'],
+            });
+            await db.query(
+              '''INSERT INTO alerts (doctor_id, patient_id, alert_type, severity, message, details)
+                 VALUES (@d, @p, 'ia_assessment', @s, @m, @det)''',
+              substitutionValues: {
+                'd': doctorId,
+                'p': patientId,
+                's': severity,
+                'm': analysis['summary'],
+                'det': details,
+              },
+            );
+            final doctorUserId = patientRow['doctor_user_id'];
+            if (doctorUserId != null) {
+              await db.query(
+                '''INSERT INTO notifications (user_id, title, message, notification_type, data)
+                   VALUES (@u, @t, @m, 'alert', @data)''',
+                substitutionValues: {
+                  'u': doctorUserId,
+                  't': 'Alerte IA — $patientName',
+                  'm':
+                      '${analysis['summary']}\n📞 Patient : $patientName — $patientPhone',
+                  'data': details,
+                },
+              );
+            }
+          }
         }
       }
 
@@ -285,6 +330,62 @@ final _patientRouter = Router()
           body: jsonEncode({
             'telemetry': telemetryRow,
             if (analysis != null) 'ia': analysis,
+          }),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
+    }
+  })
+  ..get('/health-state', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final uid = int.parse(user['id'].toString());
+      final rows = await db.query(
+        '''SELECT a.severity, a.message, a.details, a.created_at
+           FROM alerts a JOIN patients p ON p.id = a.patient_id
+           WHERE p.user_id = @u AND a.alert_type = 'ia_assessment'
+           ORDER BY a.created_at DESC LIMIT 1''',
+        substitutionValues: {'u': uid},
+      );
+      if (rows.isEmpty) {
+        return Response.ok(
+            jsonEncode({
+              'status': 'aucune',
+              'message':
+                  'Votre médecin n\'a pas encore reçu d\'analyse. Enregistrez vos mesures pour obtenir un premier bilan.',
+            }),
+            headers: {'content-type': 'application/json'});
+      }
+      final row = jsonSafe(rows.first.toColumnMap()) as Map<String, dynamic>;
+      final details = row['details'];
+      Map<String, dynamic> parsed = {};
+      if (details is Map<String, dynamic>) {
+        parsed = details;
+      } else if (details is String && details.trim().isNotEmpty) {
+        try {
+          final decoded = jsonDecode(details);
+          if (decoded is Map) parsed = Map<String, dynamic>.from(decoded);
+        } on FormatException {
+          // détails non JSON : on ignore
+        }
+      }
+      return Response.ok(
+          jsonEncode({
+            'status': parsed['status'] ?? 'preoccupant',
+            'severity': parsed['severity'] ?? row['severity'],
+            'summary': row['message'] ?? parsed['summary'] ?? '',
+            'patient_message':
+                parsed['patient_message'] ?? parsed['summary'] ?? '',
+            'recommendations': parsed['recommendations'] ?? [],
+            'telemetry': parsed['telemetry'],
+            'patient_name': parsed['patient_name'],
+            'analyzed_at': row['created_at'],
           }),
           headers: {'content-type': 'application/json'});
     } finally {
@@ -669,6 +770,52 @@ final _patientRouter = Router()
       await db.close();
     }
   });
+
+/// Validation stricte côté serveur des constantes saisies : protège la base
+/// contre les valeurs absurdes ou les requêtes modifiées (sécurité).
+/// Retourne un message d'erreur en français, ou `null` si valide.
+String? _validateTelemetry(Map<String, dynamic> body) {
+  double? numOf(String key) {
+    final v = body[key];
+    if (v == null) return null;
+    return num.tryParse('$v')?.toDouble();
+  }
+
+  final weight = numOf('weight');
+  final systolic = numOf('bloodPressureSystolic');
+  final diastolic = numOf('bloodPressureDiastolic');
+  final heartRate = numOf('heartRate');
+  final temperature = numOf('temperature');
+  final glucose = numOf('bloodGlucose');
+
+  if (weight == null || systolic == null || diastolic == null ||
+      temperature == null || glucose == null) {
+    return 'Constantes incomplètes : poids, tension, température et glycémie sont requis.';
+  }
+  if (weight < 25 || weight > 300) return 'Poids invalide (25 à 300 kg).';
+  if (systolic < 40 || systolic > 260) {
+    return 'Tension systolique invalide (40 à 260 mmHg).';
+  }
+  if (diastolic < 20 || diastolic > 160) {
+    return 'Tension diastolique invalide (20 à 160 mmHg).';
+  }
+  if (systolic <= diastolic) {
+    return 'La tension systolique doit être supérieure à la diastolique.';
+  }
+  if (heartRate != null && (heartRate < 30 || heartRate > 220)) {
+    return 'Fréquence cardiaque invalide (30 à 220 bpm).';
+  }
+  if (temperature < 30 || temperature > 45) {
+    return 'Température invalide (30 à 45 °C).';
+  }
+  if (glucose < 0.3 || glucose > 60) return 'Glycémie invalide.';
+
+  final notes = body['notes'];
+  if (notes is String && notes.trim().length > 500) {
+    return 'Le commentaire ne doit pas dépasser 500 caractères.';
+  }
+  return null;
+}
 
 // Export named router
 final router = _patientRouter;

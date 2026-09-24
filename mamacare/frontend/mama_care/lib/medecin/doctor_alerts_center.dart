@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
 import 'package:mama_care/medecin/doctor_patiente_detail.dart';
 import '../shared/app_theme.dart';
+import '../shared/date_utils.dart';
 
 class DoctorAlertsCenter extends StatefulWidget {
   const DoctorAlertsCenter({super.key});
@@ -174,14 +175,7 @@ class _DoctorAlertsCenterState extends State<DoctorAlertsCenter> {
   }
 
   String _formatDate(Object? value) {
-    if (value == null) return '';
-    final parsed = DateTime.tryParse('$value');
-    if (parsed == null) return '$value';
-    final day = parsed.day.toString().padLeft(2, '0');
-    final month = parsed.month.toString().padLeft(2, '0');
-    final hour = parsed.hour.toString().padLeft(2, '0');
-    final minute = parsed.minute.toString().padLeft(2, '0');
-    return '$day/$month  ${parsed.year}  $hour:$minute';
+    return formatFullDate(value);
   }
 
   Map<String, dynamic> _parseDetails(Object? value) {
@@ -199,6 +193,38 @@ class _DoctorAlertsCenterState extends State<DoctorAlertsCenter> {
     return const {};
   }
 
+  List<String> _telemetryChips(Map<dynamic, dynamic> t) {
+    String v(Object? value) {
+      final n = num.tryParse('$value');
+      if (n == null) return '—';
+      return n == n.roundToDouble() ? '${n.toInt()}' : n.toStringAsFixed(1);
+    }
+
+    return [
+      if (t['blood_pressure_systolic'] != null &&
+          t['blood_pressure_diastolic'] != null)
+        'TA ${v(t['blood_pressure_systolic'])}/${v(t['blood_pressure_diastolic'])}',
+      if (t['weight'] != null) 'Poids ${v(t['weight'])} kg',
+      if (t['blood_glucose'] != null) 'Glycémie ${v(t['blood_glucose'])}',
+      if (t['temperature'] != null) 'Temp ${v(t['temperature'])} °C',
+      if (t['heart_rate'] != null) 'Pouls ${v(t['heart_rate'])} bpm',
+    ];
+  }
+
+  Widget _chip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4ECEE),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 11, color: Color(0xFF4A3A3D)),
+      ),
+    );
+  }
+
   Widget _buildAlertCard(Map<String, dynamic> alert) {
     final isRead = alert['is_read'] == true;
     final severity = alert['severity'] as String?;
@@ -211,6 +237,9 @@ class _DoctorAlertsCenterState extends State<DoctorAlertsCenter> {
         .whereType<String>()
         .toList();
     final patientId = '${alert['patient_id']}';
+    final phone = '${alert['patient_phone'] ?? ''}';
+    final telemetry = details['telemetry'];
+    final t = telemetry is Map ? telemetry : const {};
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -278,11 +307,39 @@ class _DoctorAlertsCenterState extends State<DoctorAlertsCenter> {
                   : '$firstName $lastName',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
+            if (phone.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.phone, size: 14, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Text(
+                      phone,
+                      style: const TextStyle(
+                        color: burgundy,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (weeks != null)
               Text(
                 '$weeks semaine${weeks == 1 ? '' : 's'} de grossesse',
                 style: const TextStyle(color: Colors.grey, fontSize: 12),
               ),
+            if (t.isNotEmpty && _telemetryChips(t).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final chip in _telemetryChips(t)) _chip(chip),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
             Text(
               alert['message'] as String? ?? '',

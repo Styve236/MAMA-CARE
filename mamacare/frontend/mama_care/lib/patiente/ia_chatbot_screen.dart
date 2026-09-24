@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 import '../shared/app_theme.dart';
+import '../shared/date_utils.dart';
 
 class IAChatbotScreen extends StatefulWidget {
   const IAChatbotScreen({super.key});
@@ -13,6 +14,39 @@ class _IAChatbotScreenState extends State<IAChatbotScreen> {
   final TextEditingController _messageController = TextEditingController();
 
   final List<Map<String, dynamic>> _messages = [];
+  bool _hasLoadedHistory = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final history = await ApiClient.patientChatHistory();
+      if (!mounted) return;
+      setState(() {
+        _hasLoadedHistory = true;
+        _messages.clear();
+        for (final item in history) {
+          final at = item['created_at'];
+          _messages.add({"text": item['user_message'], "isMe": true, "at": at});
+          _messages.add({"text": item['bot_response'], "isMe": false, "at": at});
+        }
+      });
+    } on ApiException {
+      if (mounted) setState(() => _hasLoadedHistory = true);
+    } catch (_) {
+      if (mounted) setState(() => _hasLoadedHistory = true);
+    }
+  }
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
@@ -88,18 +122,26 @@ class _IAChatbotScreenState extends State<IAChatbotScreen> {
           ],
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _loadHistory,
+          ),
+        ],
       ),
       body: Column(
         children: [
           Expanded(
-            child: _messages.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    padding: EdgeInsets.all(20),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) =>
-                        _buildChatBubble(_messages[index]),
-                  ),
+            child: !_hasLoadedHistory
+                ? const Center(child: CircularProgressIndicator())
+                : _messages.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        padding: EdgeInsets.all(20),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) =>
+                            _buildChatBubble(_messages[index]),
+                      ),
           ),
           _buildSuggestionChips(),
           _buildMessageInput(),
@@ -124,6 +166,12 @@ class _IAChatbotScreenState extends State<IAChatbotScreen> {
             style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
             textAlign: TextAlign.center,
           ),
+          SizedBox(height: 8),
+          Text(
+            "Vos échanges sont enregistrés : vous pourrez les relire à tout moment.",
+            style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
@@ -132,6 +180,7 @@ class _IAChatbotScreenState extends State<IAChatbotScreen> {
   Widget _buildChatBubble(Map<String, dynamic> message) {
     bool isMe = message["isMe"];
     final isLoading = message["isLoading"] == true;
+    final at = message["at"];
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -160,9 +209,27 @@ class _IAChatbotScreenState extends State<IAChatbotScreen> {
                   ),
                 ],
               )
-            : Text(
-                message["text"],
-                style: TextStyle(color: isMe ? Colors.white : Colors.black87),
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    message["text"],
+                    style: TextStyle(
+                      color: isMe ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  if (at != null) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      formatShortDateTime(at),
+                      style: TextStyle(
+                        color: isMe ? Colors.white54 : Colors.grey,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ],
               ),
       ),
     );

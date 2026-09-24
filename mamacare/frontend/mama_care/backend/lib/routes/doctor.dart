@@ -81,7 +81,7 @@ final _doctorRouter = Router()
       final docId = docRes.first[0];
       final rows = await db.query('''SELECT a.id, a.alert_type, a.severity, a.message, a.details,
           a.is_read, a.created_at, p.id AS patient_id, p.pregnancy_weeks,
-          u.first_name, u.last_name
+          u.first_name, u.last_name, u.phone AS patient_phone
           FROM alerts a JOIN patients p ON p.id = a.patient_id JOIN users u ON u.id = p.user_id
           WHERE a.doctor_id = @d ORDER BY a.created_at DESC''', substitutionValues: {'d': docId});
       return Response.ok(jsonEncode(rows.map((r) => jsonSafe(r.toColumnMap())).toList()), headers: {'content-type': 'application/json'});

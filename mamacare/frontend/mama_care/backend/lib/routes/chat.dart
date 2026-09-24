@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
+import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/env.dart';
+import 'package:backend/utils/json_safe.dart';
 import 'package:backend/utils/gemini.dart' show kGeminiModels;
 
 const _systemPrompt = '''
@@ -33,6 +35,12 @@ final _chatRouter = Router()
       return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
           headers: {'content-type': 'application/json'});
     }
+    // L'historique est lié à la patiente connectée : le chat est réservé au
+    // rôle patiente (sécurité des données).
+    if (user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Forbidden'}),
+          headers: {'content-type': 'application/json'});
+    }
 
     final Object? decoded;
     try {
@@ -47,6 +55,11 @@ final _chatRouter = Router()
     if (message == null || message.trim().isEmpty) {
       return Response(400,
           body: jsonEncode({'error': 'Le message est vide'}),
+          headers: {'content-type': 'application/json'});
+    }
+    if (message.trim().length > 2000) {
+      return Response(400,
+          body: jsonEncode({'error': 'Message trop long (2000 caractères max)'}),
           headers: {'content-type': 'application/json'});
     }
 
@@ -106,6 +119,29 @@ final _chatRouter = Router()
           }
         }
         if (text == null || text.trim().isEmpty) continue;
+
+        // Persistance : la patiente pourra relire cet échange à tout moment.
+        final db = Database();
+        await db.connect();
+        try {
+          final patient = await db.query(
+              'SELECT id FROM patients WHERE user_id = @u',
+              substitutionValues: {'u': int.parse('${user['id']}')});
+          if (patient.isNotEmpty) {
+            await db.query(
+              '''INSERT INTO chatbot_conversations (patient_id, user_message, bot_response)
+                 VALUES (@p, @um, @bm)''',
+              substitutionValues: {
+                'p': patient.first[0],
+                'um': message.trim(),
+                'bm': text.trim(),
+              },
+            );
+          }
+        } finally {
+          await db.close();
+        }
+
         return Response.ok(jsonEncode({'reply': text.trim()}),
             headers: {'content-type': 'application/json'});
       }
@@ -118,6 +154,29 @@ final _chatRouter = Router()
           headers: {'content-type': 'application/json'});
     } finally {
       client.close();
+    }
+  })
+  ..get('/history', (Request req) async {
+    final user = _extractUser(req);
+    if (user == null || user['role'] != 'patiente') {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    final db = Database();
+    await db.connect();
+    try {
+      final rows = await db.query(
+        '''SELECT c.id, c.user_message, c.bot_response, c.created_at
+           FROM chatbot_conversations c JOIN patients p ON p.id = c.patient_id
+           WHERE p.user_id = @u
+           ORDER BY c.created_at DESC LIMIT 100''',
+        substitutionValues: {'u': int.parse('${user['id']}')},
+      );
+      final items = rows.map((r) => jsonSafe(r.toColumnMap())).toList();
+      return Response.ok(jsonEncode(items.reversed.toList()),
+          headers: {'content-type': 'application/json'});
+    } finally {
+      await db.close();
     }
   });
 

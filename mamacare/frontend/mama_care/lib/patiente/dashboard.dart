@@ -8,6 +8,7 @@ import 'package:mama_care/patiente/doctor_messaging.dart';
 import 'package:mama_care/patiente/appointments_reminders_screen.dart';
 import 'package:mama_care/patiente/telemetry_input.dart';
 import 'package:mama_care/patiente/patiente_profile_screen.dart'; // Import de ton écran profil séparé
+import 'package:mama_care/shared/date_utils.dart';
 
 const Color burgundyColor = Color(0xFF6B1D2F);
 
@@ -30,6 +31,7 @@ class _DashboardState extends State<Dashboard> {
 
   int _selectedIndex = 0;
   int _unreadMessages = 0;
+  Map<String, dynamic>? _healthState;
 
   // LISTE DES 5 ÉCRANS LIÉS AUX 5 ONGLETS DU BAS
   List<Widget> _pages(BuildContext context) => [
@@ -109,6 +111,7 @@ class _DashboardState extends State<Dashboard> {
         ApiClient.patientTelemetry(),
         ApiClient.patientAppointments(),
         ApiClient.patientMessageUnreadCount(),
+        ApiClient.patientHealthState(),
       ]);
       if (!mounted) return;
 
@@ -120,6 +123,7 @@ class _DashboardState extends State<Dashboard> {
 
       setState(() {
         _unreadMessages = results[3] as int;
+        _healthState = results[4] as Map<String, dynamic>;
         patientName = [profile['first_name'], profile['last_name']]
             .whereType<String>()
             .where((value) => value.isNotEmpty)
@@ -202,6 +206,10 @@ class _DashboardState extends State<Dashboard> {
                 ],
               ),
             ),
+            const SizedBox(height: 25),
+
+            // ANALYSE IA DE L'ÉTAT DE SANTÉ
+            _buildHealthStateCard(),
             const SizedBox(height: 25),
 
             // CARTES DES CONSTANTES
@@ -289,6 +297,111 @@ class _DashboardState extends State<Dashboard> {
           Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 5),
           Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHealthStateCard() {
+    final state = _healthState;
+    if (state == null) return const SizedBox.shrink();
+
+    final status = '${state['status']}';
+    final noAnalysis = status == 'aucune';
+    final Color cardColor;
+    final Color iconColor;
+    final IconData icon;
+    final String label;
+    if (noAnalysis) {
+      cardColor = const Color(0xFFF0E7E9);
+      iconColor = Colors.grey;
+      icon = Icons.health_and_safety_outlined;
+      label = 'Pas encore de bilan';
+    } else {
+      switch (status) {
+        case 'malaise':
+          cardColor = const Color(0xFFB3261E);
+          iconColor = Colors.white;
+          icon = Icons.emergency;
+          label = 'Risque de malaise';
+          break;
+        case 'grave':
+          cardColor = const Color(0xFFB3261E);
+          iconColor = Colors.white;
+          icon = Icons.warning_amber;
+          label = 'État grave';
+          break;
+        case 'preoccupant':
+          cardColor = const Color(0xFFB54708);
+          iconColor = Colors.white;
+          icon = Icons.notifications_active;
+          label = 'État préoccupant';
+          break;
+        default:
+          cardColor = const Color(0xFF2E7D32);
+          iconColor = Colors.white;
+          icon = Icons.check_circle;
+          label = 'Bonne santé';
+      }
+    }
+
+    final analyzedAt = timeAgo(state['analyzed_at']);
+    final message = noAnalysis
+        ? '${state['message']}'
+        : '${state['patient_message'] ?? state['summary'] ?? ''}';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: cardColor.withValues(alpha: noAnalysis ? 0 : 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: iconColor, size: 26),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: noAnalysis ? Colors.black87 : Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              if (analyzedAt.isNotEmpty && !noAnalysis)
+                Text(
+                  analyzedAt,
+                  style: TextStyle(
+                    color: noAnalysis ? Colors.grey : Colors.white70,
+                    fontSize: 11,
+                  ),
+                ),
+            ],
+          ),
+          if (message.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              message,
+              style: TextStyle(
+                color: noAnalysis ? Colors.black87 : Colors.white,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ],
         ],
       ),
     );
