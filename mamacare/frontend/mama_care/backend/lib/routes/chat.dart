@@ -1,12 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/env.dart';
 import 'package:backend/utils/json_safe.dart';
-import 'package:backend/utils/gemini.dart' show kGeminiModels;
+import 'package:backend/utils/mistral.dart';
 
 const _systemPrompt = '''
 Tu es Mamacare AI, l'assistante virtuelle de l'application Mamacare dédiée au suivi de la grossesse.
@@ -65,7 +64,7 @@ final _chatRouter = Router()
           headers: {'content-type': 'application/json'});
     }
 
-    final apiKey = Env.get('GEMINI_API_KEY');
+    final apiKey = Env.get('MISTRAL_API_KEY');
     if (apiKey == null || apiKey.isEmpty) {
       return Response(503,
           body: jsonEncode(
@@ -73,90 +72,40 @@ final _chatRouter = Router()
           headers: {'content-type': 'application/json'});
     }
 
-    final client = HttpClient();
-    try {
-      for (final model in kGeminiModels) {
-        final uri = Uri.parse(
-            'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey');
-        final request = await client.postUrl(uri);
-        request.headers.contentType = ContentType.json;
-        request.write(jsonEncode({
-          'systemInstruction': {
-            'parts': [
-              {'text': _systemPrompt}
-            ]
-          },
-          'contents': [
-            {
-              'role': 'user',
-              'parts': [
-                {'text': message.trim()}
-              ]
-            }
-          ],
-          'generationConfig': {
-            'maxOutputTokens': 400,
-            'temperature': 0.6,
-          },
-        }));
-
-        final response = await request.close();
-        final responseBody = await response.transform(utf8.decoder).join();
-        if (response.statusCode != 200) continue;
-
-        final decodedResponse =
-            jsonDecode(responseBody) as Map<String, dynamic>;
-        final candidates = decodedResponse['candidates'] as List?;
-        String? text;
-        if (candidates != null && candidates.isNotEmpty) {
-          final content = (candidates.first as Map<String, dynamic>)['content'];
-          if (content is Map<String, dynamic>) {
-            final parts = content['parts'] as List?;
-            if (parts != null && parts.isNotEmpty) {
-              text = parts
-                  .map((p) =>
-                      (p as Map<String, dynamic>)['text'] as String? ?? '')
-                  .join();
-            }
-          }
-        }
-        if (text == null || text.trim().isEmpty) continue;
-
-        // Persistance : la patiente pourra relire cet échange à tout moment.
-        final db = Database();
-        await db.connect();
-        try {
-          final patient = await db.query(
-              'SELECT id FROM patients WHERE user_id = @u',
-              substitutionValues: {'u': int.parse('${user['id']}')});
-          if (patient.isNotEmpty) {
-            await db.query(
-              '''INSERT INTO chatbot_conversations (patient_id, user_message, bot_response)
-                 VALUES (@p, @um, @bm)''',
-              substitutionValues: {
-                'p': patient.first[0],
-                'um': message.trim(),
-                'bm': text.trim(),
-              },
-            );
-          }
-        } finally {
-          await db.close();
-        }
-
-        return Response.ok(jsonEncode({'reply': text.trim()}),
-            headers: {'content-type': 'application/json'});
-      }
+    final text = await mistralChatCompletion(
+      systemPrompt: _systemPrompt,
+      userMessage: message.trim(),
+    );
+    if (text == null) {
       return Response(502,
           body: jsonEncode({'error': 'Réponse invalide du service IA'}),
           headers: {'content-type': 'application/json'});
-    } on SocketException {
-      return Response(502,
-          body: jsonEncode({'error': 'Impossible de joindre le service IA'}),
-          headers: {'content-type': 'application/json'});
-    } finally {
-      client.close();
     }
+
+    // Persistance : la patiente pourra relire cet échange à tout moment.
+    final db = Database();
+    await db.connect();
+    try {
+      final patient = await db.query(
+          'SELECT id FROM patients WHERE user_id = @u',
+          substitutionValues: {'u': int.parse('${user['id']}')});
+      if (patient.isNotEmpty) {
+        await db.query(
+          '''INSERT INTO chatbot_conversations (patient_id, user_message, bot_response)
+             VALUES (@p, @um, @bm)''',
+          substitutionValues: {
+            'p': patient.first[0],
+            'um': message.trim(),
+            'bm': text.trim(),
+          },
+        );
+      }
+    } finally {
+      await db.close();
+    }
+
+    return Response.ok(jsonEncode({'reply': text.trim()}),
+        headers: {'content-type': 'application/json'});
   })
   ..get('/history', (Request req) async {
     final user = _extractUser(req);

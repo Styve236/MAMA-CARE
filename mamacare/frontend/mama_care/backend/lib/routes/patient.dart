@@ -4,7 +4,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/json_safe.dart';
-import 'package:backend/utils/gemini.dart';
+import 'package:backend/utils/mistral.dart';
 import 'package:backend/utils/dates_fr.dart';
 
 Map<String, dynamic>? _extractUser(Request req) {

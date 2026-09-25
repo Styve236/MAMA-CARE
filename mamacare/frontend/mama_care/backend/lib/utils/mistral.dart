@@ -2,17 +2,102 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:backend/utils/env.dart';
 
-/// Modèles Gemini tentés en cascade : si un modèle est saturé (503 "high
-/// demand"), à quota (429) ou indisponible (404), on passe au suivant.
-const kGeminiModels = [
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-3-flash-preview',
-  'gemini-flash-lite-latest',
+/// Modèles Mistral tentés en cascade : si un modèle est à quota (429),
+/// saturé (503), indisponible (404) ou renvoie une réponse invalide,
+/// on passe au suivant (l'alias "latest" suit les versions récentes).
+const kMistralModels = [
+  'mistral-small-latest',
+  'open-mistral-nemo',
+  'mistral-medium-latest',
+  'mistral-large-latest',
 ];
 
-/// Analyse les constantes (télémétrie) d'une patiente via Gemini et retourne
+const _apiBase = 'https://api.mistral.ai/v1/chat/completions';
+
+HttpClient _client() {
+  final client = HttpClient();
+  client.connectionTimeout = const Duration(seconds: 20);
+  return client;
+}
+
+String? _apiKey() {
+  final key = Env.get('MISTRAL_API_KEY');
+  if (key == null || key.isEmpty) return null;
+  return key;
+}
+
+/// Appel OpenAI-compatible de base vers Mistral. Retourne le texte brut ou
+/// null si aucun modèle n'a répondu correctement.
+Future<String?> _chatCompletion({
+  required String systemPrompt,
+  required String userMessage,
+  int maxTokens = 400,
+  double temperature = 0.6,
+  bool jsonObject = false,
+}) async {
+  final apiKey = _apiKey();
+  if (apiKey == null) return null;
+  final client = _client();
+  try {
+    for (final model in kMistralModels) {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        if (model != kMistralModels.first || attempt > 0) {
+          await Future.delayed(Duration(seconds: 1 + attempt));
+        }
+        final request = await client.postUrl(Uri.parse(_apiBase));
+        request.headers.contentType = ContentType.json;
+        request.headers.set('authorization', 'Bearer $apiKey');
+        request.write(jsonEncode({
+          'model': model,
+          'messages': [
+            {'role': 'system', 'content': systemPrompt},
+            {'role': 'user', 'content': userMessage},
+          ],
+          if (jsonObject) 'response_format': {'type': 'json_object'},
+          'temperature': temperature,
+          'max_tokens': maxTokens,
+        }));
+
+        final response = await request.close();
+        final responseBody = await response.transform(utf8.decoder).join();
+        if (response.statusCode != 200) continue;
+
+        final decoded = jsonDecode(responseBody) as Map<String, dynamic>;
+        final choices = decoded['choices'] as List?;
+        if (choices == null || choices.isEmpty) continue;
+        final message = choices.first is Map<String, dynamic>
+            ? (choices.first as Map<String, dynamic>)['message']
+            : null;
+        final content =
+            message is Map<String, dynamic> ? message['content'] : null;
+        final text = content is String ? content.trim() : '';
+        if (text.isEmpty) continue;
+        return text;
+      }
+    }
+    return null;
+  } on FormatException {
+    return null;
+  } on SocketException {
+    return null;
+  } finally {
+    client.close();
+  }
+}
+
+/// Réponse conversationnelle du chatbot (texte libre).
+Future<String?> mistralChatCompletion({
+  required String systemPrompt,
+  required String userMessage,
+}) =>
+    _chatCompletion(
+      systemPrompt: systemPrompt,
+      userMessage: userMessage,
+      maxTokens: 400,
+      temperature: 0.6,
+    );
+
+/// Analyse les constantes (télémétrie) d'une patiente via Mistral et retourne
 /// un résultat structuré : niveau de risque, état de santé, synthèse médecin,
 /// message patiente et recommandations.
 ///
@@ -24,8 +109,6 @@ Future<Map<String, dynamic>?> analyzeTelemetry(
   Map<String, dynamic> telemetry,
 ) async {
   final local = ruleBasedAnalysis(profile, telemetry);
-  final apiKey = Env.get('GEMINI_API_KEY');
-  if (apiKey == null || apiKey.isEmpty) return local;
   const prompt = '''
 Tu es l'IA médicale de Mamacare, spécialisée dans le suivi de grossesse.
 Tu analyses les constantes saisies par une patiente pour :
@@ -48,14 +131,21 @@ concrètes, adaptées au niveau détecté :
   alimentation équilibrée…).
 La liste "recommendations" ne doit JAMAIS être vide ni vague.
 
-Repères (grossesse) — les valeurs saisies par la patiente sont en g/L pour la
-glycémie, °C pour la température, mmHg pour la tension :
+Repères (grossesse) — les valeurs saisies par la patiente sont DÉJÀ en g/L pour la
+glycémie, °C pour la température, mmHg pour la tension. Ne convertis JAMAIS d'unités
+et ne te fie pas aux valeurs usuelles que tu connais par ailleurs (mg/dL, mmol/L) :
+utilise UNIQUEMENT le tableau ci-dessous.
 - Tension artérielle dangereuse : systolique >= 160 ou diastolique >= 110 (critical) ;
   préoccupante : systolique >= 140 ou diastolique >= 90 (warning) ; hypotension : systolique < 90 (warning/malaise).
 - Rythme cardiaque : hors 60-100 (warning), hors 50-110 (critical).
-- Glycémie : >= 1.26 g/L (warning), >= 2.0 g/L (critical) ; <= 0.6 g/L (critical, risque de malaise).
+- Glycémie (g/L, strictement selon ces seuils) :
+   >= 2.0 → critical (grave) ;
+   >= 1.26 et < 2.0 → warning (preoccupant) ;
+   > 0.6 et < 1.26 → normal (bonne), RAS ;
+   <= 0.6 → critical (malaise).
+  Exemple : 0.88 g/L est NORMAL, ne qualifie jamais une glycémie > 0.6 g/L d'hypoglycémie.
 - Température : >= 38.0 (warning), >= 38.5 (critical).
-- Risque de malaise si : hypoglycémie (< 3.9) OU hypotension marquée OU combinaison
+- Risque de malaise si : hypoglycémie (glycémie < 0.6 g/L) OU hypotension marquée OU combinaison
   glycémie basse + tension basse ; et si la patiente signale vertiges, malaise, sueurs,
   évanouissement.
 - Toujours stresser si la patiente signale douleurs, saignements, perte des eaux,
@@ -64,98 +154,46 @@ Le message patiente ('patient_message') doit être empathique, en français, cou
 préventif, sans jamais annoncer un diagnostic.
 ''';
 
-  final client = HttpClient();
+  final text = await _chatCompletion(
+    systemPrompt: prompt,
+    userMessage: 'Analyse ces données patiente et retourne le JSON demandé :\n'
+        '${jsonEncode({'profile': profile, 'telemetry': telemetry})}',
+    maxTokens: 600,
+    temperature: 0.2,
+    jsonObject: true,
+  );
+  if (text == null) return local;
+
   try {
-    for (final model in kGeminiModels) {
-      for (var attempt = 0; attempt < 2; attempt++) {
-        if (model != kGeminiModels.first || attempt > 0) {
-          await Future.delayed(Duration(seconds: 1 + attempt));
-        }
-        final uri = Uri.parse(
-            'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey');
-        final request = await client.postUrl(uri);
-        request.headers.contentType = ContentType.json;
-        final context = {
-          'profile': profile,
-          'telemetry': telemetry,
-        };
-        request.write(jsonEncode({
-          'systemInstruction': {
-            'parts': [
-              {'text': prompt}
-            ]
-          },
-          'contents': [
-            {
-              'role': 'user',
-              'parts': [
-                {
-                  'text':
-                      'Analyse ces données patiente et retourne le JSON demandé :\n${jsonEncode(context)}'
-                }
-              ]
-            }
-          ],
-          'generationConfig': {
-            'maxOutputTokens': 600,
-            'temperature': 0.2,
-          },
-        }));
+    final jsonStart = text.indexOf('{');
+    final jsonEnd = text.lastIndexOf('}');
+    if (jsonStart < 0 || jsonEnd <= jsonStart) return local;
+    final parsed = jsonDecode(text.substring(jsonStart, jsonEnd + 1))
+        as Map<String, dynamic>;
 
-        final response = await request.close();
-        final responseBody = await response.transform(utf8.decoder).join();
-        if (response.statusCode != 200) continue;
-
-        final decoded = jsonDecode(responseBody) as Map<String, dynamic>;
-        final candidates = decoded['candidates'] as List?;
-        if (candidates == null || candidates.isEmpty) continue;
-        final content = (candidates.first as Map<String, dynamic>)['content'];
-        if (content is! Map<String, dynamic>) continue;
-        final parts = content['parts'] as List?;
-        if (parts == null || parts.isEmpty) continue;
-        final text = parts.map((p) {
-          final map = p as Map<String, dynamic>;
-          return map['text'] as String? ?? '';
-        }).join();
-        if (text.trim().isEmpty) continue;
-
-        final jsonStart = text.indexOf('{');
-        final jsonEnd = text.lastIndexOf('}');
-        if (jsonStart < 0 || jsonEnd <= jsonStart) continue;
-        final parsed = jsonDecode(text.substring(jsonStart, jsonEnd + 1))
-            as Map<String, dynamic>;
-
-        // L'IA ne peut qu'ALOURDIR le niveau d'urgence par rapport aux règles
-        // locales : jamais le masquer (sécurité).
-        final ia = _normalizeParsed(parsed);
-        final finalStatus = _statusFor(local, ia);
-        final finalMalaise =
-            local['risk_of_malaise'] == true || ia['risk_of_malaise'] == true;
-        final iaRecs = (ia['recommendations'] as List? ?? [])
-            .map((e) => '$e'.trim())
-            .where((e) => e.isNotEmpty)
-            .take(3)
-            .toList();
-        return {
-          'severity': _maxSeverity(local, ia),
-          'status': finalStatus,
-          'summary': ia['summary'],
-          'patient_message': ia['patient_message'],
-          'recommendations': iaRecs.isEmpty
-              ? recommendationsFor(finalStatus,
-                  riskOfMalaise: finalMalaise)
-              : iaRecs,
-          'risk_of_malaise': finalMalaise,
-        };
-      }
-    }
-    return local;
+    // L'IA ne peut qu'ALOURDIR le niveau d'urgence par rapport aux règles
+    // locales : jamais le masquer (sécurité).
+    final ia = _normalizeParsed(parsed);
+    final finalStatus = _statusFor(local, ia);
+    final finalMalaise =
+        local['risk_of_malaise'] == true || ia['risk_of_malaise'] == true;
+    final iaRecs = (ia['recommendations'] as List? ?? [])
+        .map((e) => '$e'.trim())
+        .where((e) => e.isNotEmpty)
+        .take(3)
+        .toList();
+    return {
+      'severity': _maxSeverity(local, ia),
+      'status': finalStatus,
+      'summary': ia['summary'],
+      'patient_message': ia['patient_message'],
+      'recommendations': iaRecs.isEmpty
+          ? recommendationsFor(finalStatus, riskOfMalaise: finalMalaise)
+          : iaRecs,
+      'risk_of_malaise': finalMalaise,
+    };
   } on FormatException {
     return local;
-  } on SocketException {
-    return local;
-  } finally {
-    client.close();
   }
 }
 
