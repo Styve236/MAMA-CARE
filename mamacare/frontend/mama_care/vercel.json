@@ -1,6 +1,6 @@
 {
   "installCommand": "git clone --depth 1 -b stable https://github.com/flutter/flutter.git flutter",
-  "buildCommand": "test -n \"$API_BASE_URL\" || (echo \"ERREUR: variable API_BASE_URL absente. Le build aurait une URL backend vide et toutes les requetes casseraient.\" && exit 1) && flutter/bin/flutter pub get && flutter/bin/flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL",
+  "buildCommand": "test -n \"$API_BASE_URL\" || exit 1; flutter/bin/flutter pub get && flutter/bin/flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL",
   "outputDirectory": "build/web",
   "headers": [
     {
