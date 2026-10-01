@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/responsive.dart';
 import '../shared/dashboard_charts.dart';
 
 class AdminGlobalStatisticsScreen extends StatefulWidget {
@@ -194,7 +195,11 @@ class _AdminGlobalStatisticsScreenState
       ('RDV terminés', 'completed_appointments', Icons.task_alt),
     ];
     return GridView.count(
-      crossAxisCount: 2,
+      crossAxisCount: Breakpoints.gridColumns(
+        MediaQuery.sizeOf(context).width,
+        min: 1,
+        max: 2,
+      ),
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 12,

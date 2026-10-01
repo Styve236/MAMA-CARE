@@ -517,15 +517,24 @@ class _DoctorDashboardMobileState extends State<DoctorDashboardMobile> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            Icon(icon, color: burgundy, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ],
+        Flexible(
+          child: Row(
+            children: [
+              Icon(icon, color: burgundy, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
         if (onSeeAll != null)
           InkWell(

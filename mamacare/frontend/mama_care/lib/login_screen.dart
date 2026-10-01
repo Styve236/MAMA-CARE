@@ -203,8 +203,9 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 40),
 
               // Lien Inscription (Dédié aux patientes)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
                     "Nouvelle patiente ?",
@@ -213,8 +214,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextButton(
                     onPressed: () {
                       Navigator.push(
-                        context, 
-                        MaterialPageRoute(builder: (context) => const RegisterPatiente()),
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const RegisterPatiente(),
+                        ),
                       );
                     },
                     child: Text(
