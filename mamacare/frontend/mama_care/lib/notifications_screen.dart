@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'services/api_client.dart';
+import 'services/push_notifications.dart';
 import 'shared/app_theme.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -18,11 +19,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _loading = true;
   String? _error;
   Timer? _refreshTimer;
+  bool _pushSupported = false;
+  bool _pushActive = false;
+  bool _pushBusy = false;
 
   @override
   void initState() {
     super.initState();
     _loadNotifications();
+    _loadPushState();
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) => _loadNotifications());
   }
 
@@ -46,6 +51,77 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await _loadNotifications();
   }
 
+  Future<void> _loadPushState() async {
+    final supported = PushNotifications.isSupported;
+    final active = supported ? await PushNotifications.isActive() : false;
+    if (!mounted) return;
+    setState(() {
+      _pushSupported = supported;
+      _pushActive = active;
+    });
+  }
+
+  Future<void> _togglePush(bool enable) async {
+    setState(() => _pushBusy = true);
+    try {
+      if (enable) {
+        await PushNotifications.enable();
+      } else {
+        await PushNotifications.disable();
+      }
+      if (!mounted) return;
+      setState(() {
+        _pushActive = enable;
+        _pushBusy = false;
+      });
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            enable
+                ? 'Notifications de rappel activées sur cet appareil.'
+                : 'Notifications de rappel désactivées sur cet appareil.',
+          ),
+        ),
+      );
+    } on PushException catch (error) {
+      if (!mounted) return;
+      setState(() => _pushBusy = false);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+      await _loadPushState();
+    }
+  }
+
+  Widget _pushCard() {
+    if (!_pushSupported) {
+      return const Card(
+        margin: EdgeInsets.fromLTRB(12, 12, 12, 4),
+        child: ListTile(
+          leading: Icon(Icons.notifications_off_outlined),
+          title: Text('Rappels hors application'),
+          subtitle: Text(
+            "Les notifications push nécessitent un navigateur compatible.",
+          ),
+        ),
+      );
+    }
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: SwitchListTile(
+        value: _pushActive,
+        onChanged: _pushBusy ? null : _togglePush,
+        secondary: const Icon(Icons.notifications_active_outlined),
+        title: const Text('Rappels hors application'),
+        subtitle: Text(
+          _pushActive
+              ? "Vous serez prévenue même si l'application est fermée."
+              : "Activez pour être prévenue même si l'application est fermée.",
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -64,11 +140,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               : RefreshIndicator(
                   onRefresh: _loadNotifications,
                   child: _notifications.isEmpty
-                      ? ListView(children: const [SizedBox(height: 180), Center(child: Text('Aucune notification'))])
+                      ? ListView(children: [const SizedBox(height: 24), _pushCard(), const SizedBox(height: 140), const Center(child: Text('Aucune notification'))])
                       : ListView.builder(
-                          itemCount: _notifications.length,
+                          itemCount: _notifications.length + 1,
                           itemBuilder: (context, index) {
-                            final notification = _notifications[index];
+                            if (index == 0) return _pushCard();
+                            final notification = _notifications[index - 1];
                             final isRead = notification['is_read'] == true;
                             return ListTile(
                               tileColor: isRead ? null : const Color(0xFFFFF4F6),

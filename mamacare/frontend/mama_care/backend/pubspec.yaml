@@ -13,6 +13,7 @@ dependencies:
   # Use 'any' to allow resolving a compatible dotenv package in this environment.
   dart_jsonwebtoken: ^2.4.1
   crypto: ^3.0.2
+  pointycastle: ^3.9.1
   supabase: ^0.3.0
   uuid: ^3.0.6
   logging: ^1.0.2

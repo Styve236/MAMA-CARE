@@ -22,6 +22,9 @@ class ApiClient {
   static const _kTokenKey = 'mamacare_auth_token';
   static const _kUserKey = 'mamacare_auth_user';
 
+  static String get baseUrl => _baseUrl;
+  static String? get authToken => _token;
+
   static bool get isLoggedIn => _token != null && _token!.isNotEmpty;
   static Map<String, dynamic>? get currentUser => _user;
 
