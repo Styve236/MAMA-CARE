@@ -950,7 +950,9 @@ String? _validateTelemetry(Map<String, dynamic> body) {
   if (temperature < 30 || temperature > 45) {
     return 'Température invalide (30 à 45 °C).';
   }
-  if (glucose < 0.3 || glucose > 60) return 'Glycémie invalide.';
+  // Plage volontairement large : la saisie est libre, on protege seulement
+  // la base contre des valeurs manifestement faussees.
+  if (glucose < 0.1 || glucose > 60) return 'Glycémie invalide (mmol/L).';
 
   final notes = body['notes'];
   if (notes is String && notes.trim().length > 500) {

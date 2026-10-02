@@ -9,6 +9,7 @@ import 'package:mama_care/patiente/appointments_reminders_screen.dart';
 import 'package:mama_care/patiente/telemetry_input.dart';
 import 'package:mama_care/patiente/patiente_profile_screen.dart'; // Import de ton écran profil séparé
 import 'package:mama_care/shared/date_utils.dart';
+import 'package:mama_care/shared/glucose.dart';
 
 const Color burgundyColor = Color(0xFF6B1D2F);
 
@@ -133,7 +134,7 @@ class _DashboardState extends State<Dashboard> {
             ? '--/--'
             : '${latestTelemetry['blood_pressure_systolic'] ?? '--'}/${latestTelemetry['blood_pressure_diastolic'] ?? '--'}';
         lastWeight = '${latestTelemetry?['weight'] ?? '--'}';
-        lastGlycemia = '${latestTelemetry?['blood_glucose'] ?? '--'}';
+        lastGlycemia = formatGlucose(latestTelemetry?['blood_glucose']);
         nextAppointmentDate = upcomingAppointment == null
             ? 'Aucun rendez-vous prévu'
             : formatFullDate(upcomingAppointment['appointment_date']);
@@ -223,7 +224,7 @@ class _DashboardState extends State<Dashboard> {
               children: [
                 _buildConstanteCard("Tension", lastTension, Icons.favorite, Colors.red),
                 _buildConstanteCard("Poids", "$lastWeight kg", Icons.scale, Colors.blue),
-                _buildConstanteCard("Glycémie", "$lastGlycemia g/L", Icons.bloodtype, Colors.orange),
+                _buildConstanteCard("Glycémie", lastGlycemia, Icons.bloodtype, Colors.orange),
               ],
             ),
             const SizedBox(height: 30),

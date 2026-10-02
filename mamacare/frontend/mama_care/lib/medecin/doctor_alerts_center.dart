@@ -205,7 +205,7 @@ class _DoctorAlertsCenterState extends State<DoctorAlertsCenter> {
           t['blood_pressure_diastolic'] != null)
         'TA ${v(t['blood_pressure_systolic'])}/${v(t['blood_pressure_diastolic'])}',
       if (t['weight'] != null) 'Poids ${v(t['weight'])} kg',
-      if (t['blood_glucose'] != null) 'Glycémie ${v(t['blood_glucose'])}',
+      if (t['blood_glucose'] != null) 'Glycémie ${v(t['blood_glucose'])} mmol/L',
       if (t['temperature'] != null) 'Temp ${v(t['temperature'])} °C',
       if (t['heart_rate'] != null) 'Pouls ${v(t['heart_rate'])} bpm',
     ];

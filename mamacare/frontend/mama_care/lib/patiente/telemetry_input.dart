@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mama_care/services/api_client.dart';
 import '../shared/app_theme.dart';
+import '../shared/glucose.dart';
 
 class TelemetryInput extends StatefulWidget {
   const TelemetryInput({super.key});
@@ -19,11 +20,35 @@ class _TelemetryInputState extends State<TelemetryInput> {
   final _weightController = TextEditingController();
   bool _isLoading = false;
 
+  GlucoseStatus? _glucoseStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    _glycemiaController.addListener(_onGlycemiaChanged);
+  }
+
+  /// La patiente saisit en mmol/L : on l'informe en direct si sa valeur est
+  /// sous la normale, normale ou trop elevee, et on affiche l'equivalent
+  /// en mg/dL de son appareil. Aucune saisie n'est refusee ici.
+  void _onGlycemiaChanged() {
+    final value = double.tryParse(
+      _glycemiaController.text.trim().replaceAll(',', '.'),
+    );
+    if (value == null || value <= 0) {
+      if (_glucoseStatus != null) setState(() => _glucoseStatus = null);
+      return;
+    }
+    final status = glucoseStatus(value);
+    if (status != _glucoseStatus) setState(() => _glucoseStatus = status);
+  }
+
   @override
   void dispose() {
     _systoleController.dispose();
     _diastoleController.dispose();
     _tempController.dispose();
+    _glycemiaController.removeListener(_onGlycemiaChanged);
     _glycemiaController.dispose();
     _weightController.dispose();
     super.dispose();
@@ -119,8 +144,8 @@ class _TelemetryInputState extends State<TelemetryInput> {
             _buildSectionTitle("2. TEMPÉRATURE"),
             _buildField(_tempController, "Température", "°C"),
             SizedBox(height: 25),
-            _buildSectionTitle("3. GLYCÉMIE"),
-            _buildField(_glycemiaController, "Glycémie", "g/L"),
+            _buildSectionTitle("3. GLYCÉMIE (mmol/L)"),
+            _buildGlycemiaField(),
             SizedBox(height: 25),
             _buildSectionTitle("4. POIDS"),
             _buildField(_weightController, "Poids", "kg"),
@@ -180,6 +205,60 @@ class _TelemetryInputState extends State<TelemetryInput> {
         ),
       ),
     );
+  }
+
+  Widget _buildGlycemiaField() {
+    final status = _glucoseStatus;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildField(_glycemiaController, "Glycémie", "mmol/L"),
+        if (status != null) ...[
+          SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(_glucoseIcon(status), size: 18, color: _glucoseColor(status)),
+              SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  ' · ',
+                  style: TextStyle(
+                    color: _glucoseColor(status),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Color _glucoseColor(GlucoseStatus status) {
+    switch (status) {
+      case GlucoseStatus.veryLow:
+      case GlucoseStatus.veryHigh:
+        return Colors.red;
+      case GlucoseStatus.low:
+      case GlucoseStatus.high:
+        return Colors.orange;
+      case GlucoseStatus.normal:
+        return Colors.green;
+    }
+  }
+
+  IconData _glucoseIcon(GlucoseStatus status) {
+    switch (status) {
+      case GlucoseStatus.veryLow:
+      case GlucoseStatus.veryHigh:
+        return Icons.error_outline;
+      case GlucoseStatus.low:
+      case GlucoseStatus.high:
+        return Icons.warning_amber_rounded;
+      case GlucoseStatus.normal:
+        return Icons.check_circle_outline;
+    }
   }
 
   Widget _buildSectionTitle(String title) {

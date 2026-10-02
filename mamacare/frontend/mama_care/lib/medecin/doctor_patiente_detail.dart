@@ -386,7 +386,7 @@ class _DoctorPatienteDetailState extends State<DoctorPatienteDetail> {
       ('Tension', '${_num(latest['blood_pressure_systolic'])}/${_num(latest['blood_pressure_diastolic'])} mmHg', Icons.favorite),
       ('Poids', '${_num(latest['weight'])} kg', Icons.monitor_weight_outlined),
       ('Fréquence cardiaque', '${_num(latest['heart_rate'])} bpm', Icons.favorite_border),
-      ('Glycémie', _num(latest['blood_glucose']), Icons.water_drop_outlined),
+      ('Glycémie', '${_num(latest['blood_glucose'])} mmol/L', Icons.water_drop_outlined),
       ('Température', '${_num(latest['temperature'])} °C', Icons.thermostat_outlined),
     ];
     return Container(

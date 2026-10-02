@@ -131,21 +131,21 @@ concrètes, adaptées au niveau détecté :
   alimentation équilibrée…).
 La liste "recommendations" ne doit JAMAIS être vide ni vague.
 
-Repères (grossesse) — les valeurs saisies par la patiente sont DÉJÀ en g/L pour la
+Repères (grossesse) — les valeurs saisies par la patiente sont DÉJÀ en mmol/L pour la
 glycémie, °C pour la température, mmHg pour la tension. Ne convertis JAMAIS d'unités
-et ne te fie pas aux valeurs usuelles que tu connais par ailleurs (mg/dL, mmol/L) :
+et ne te fie pas aux valeurs usuelles que tu connais par ailleurs (mg/dL, g/L) :
 utilise UNIQUEMENT le tableau ci-dessous.
 - Tension artérielle dangereuse : systolique >= 160 ou diastolique >= 110 (critical) ;
   préoccupante : systolique >= 140 ou diastolique >= 90 (warning) ; hypotension : systolique < 90 (warning/malaise).
 - Rythme cardiaque : hors 60-100 (warning), hors 50-110 (critical).
-- Glycémie (g/L, strictement selon ces seuils) :
-   >= 2.0 → critical (grave) ;
-   >= 1.26 et < 2.0 → warning (preoccupant) ;
-   > 0.6 et < 1.26 → normal (bonne), RAS ;
-   <= 0.6 → critical (malaise).
-  Exemple : 0.88 g/L est NORMAL, ne qualifie jamais une glycémie > 0.6 g/L d'hypoglycémie.
+- Glycémie (mmol/L, strictement selon ces seuils) :
+   >= 11.1 → critical (grave) ;
+   >= 7.0 et < 11.1 → warning (preoccupant) ;
+   > 3.3 et < 7.0 → normal (bonne), RAS ;
+   <= 3.3 → critical (malaise).
+  Exemple : 5.5 mmol/L est NORMAL, ne qualifie jamais une glycémie > 3.3 mmol/L d'hypoglycémie.
 - Température : >= 38.0 (warning), >= 38.5 (critical).
-- Risque de malaise si : hypoglycémie (glycémie < 0.6 g/L) OU hypotension marquée OU combinaison
+- Risque de malaise si : hypoglycémie (glycémie <= 3.3 mmol/L) OU hypotension marquée OU combinaison
   glycémie basse + tension basse ; et si la patiente signale vertiges, malaise, sueurs,
   évanouissement.
 - Toujours stresser si la patiente signale douleurs, saignements, perte des eaux,
@@ -258,17 +258,19 @@ Map<String, dynamic> ruleBasedAnalysis(
     escalate('warning', to: 'preoccupant');
   }
   if ((sys ?? 0) != 0 && (dia ?? 0) != 0 && sys! < 100 && dia! < 65) {
-    if (glucose != null && glucose <= 0.7) {
+    // Seuils en mmol/L : 3,9 = 70 mg/dL, 3,3 = 60 mg/dL.
+    if (glucose != null && glucose <= 3.9) {
       riskOfMalaise = true;
       escalate('critical', to: 'malaise');
     }
   }
   if (glucose != null) {
-    if (glucose >= 2.0) {
+    // 11,1 mmol/L = 200 mg/dL, 7,0 mmol/L = 126 mg/dL, 3,3 mmol/L = 60 mg/dL.
+    if (glucose >= 11.1) {
       escalate('critical', to: 'grave');
-    } else if (glucose >= 1.26) {
+    } else if (glucose >= 7.0) {
       escalate('warning', to: 'preoccupant');
-    } else if (glucose <= 0.6) {
+    } else if (glucose <= 3.3) {
       riskOfMalaise = true;
       escalate('critical', to: 'malaise');
     }
@@ -424,7 +426,7 @@ String _summaryFor(String severity, String status, Map<String, dynamic> t) {
     parts.add('Constantes en dehors des valeurs de référence.');
   }
   parts.add(
-      'Tension $tension, pouls ${hr?.toStringAsFixed(0) ?? 'n/a'}, glycémie ${glucose?.toStringAsFixed(1) ?? 'n/a'}, température ${temp?.toStringAsFixed(1) ?? 'n/a'}°C.');
+      'Tension $tension, pouls ${hr?.toStringAsFixed(0) ?? 'n/a'}, glycémie ${glucose?.toStringAsFixed(1) ?? 'n/a'} mmol/L, température ${temp?.toStringAsFixed(1) ?? 'n/a'}°C.');
   return parts.join(' ');
 }
 
