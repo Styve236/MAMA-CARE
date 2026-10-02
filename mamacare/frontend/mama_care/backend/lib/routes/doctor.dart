@@ -5,6 +5,7 @@ import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/json_safe.dart';
 import 'package:backend/utils/dates_fr.dart';
+import 'package:backend/utils/avatar_upload.dart';
 
 Map<String, dynamic>? _extractUser(Request req) {
   final auth = req.headers['authorization'];
@@ -730,6 +731,30 @@ final _doctorRouter = Router()
     } finally {
       await db.close();
     }
+  })
+
+  ..post('/avatar', (Request req) async {
+    final user = _extractUser(req);
+    final uid = user != null && user['role'] == 'medecin'
+        ? int.tryParse('${user['id']}')
+        : null;
+    if (uid == null) {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    return handleAvatarUpload(req, table: 'doctors', userId: uid);
+  })
+
+  ..delete('/avatar', (Request req) async {
+    final user = _extractUser(req);
+    final uid = user != null && user['role'] == 'medecin'
+        ? int.tryParse('${user['id']}')
+        : null;
+    if (uid == null) {
+      return Response.forbidden(jsonEncode({'message': 'Unauthorized'}),
+          headers: {'content-type': 'application/json'});
+    }
+    return handleAvatarDelete('doctors', uid);
   });
 
 final router = _doctorRouter;

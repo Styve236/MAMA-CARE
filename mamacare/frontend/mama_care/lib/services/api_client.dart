@@ -134,6 +134,31 @@ class ApiClient {
   static Future<Map<String, dynamic>> patientProfile() =>
       _getObject('/api/patient/profile');
 
+  /// Envoie la photo de profil au serveur et renvoie l'URL publique
+  /// stockee en base. [dataBase64] doit etre l'image reduite et compressee
+  /// cote appli pour rester legere.
+  static Future<String> uploadAvatar({
+    required bool isDoctor,
+    required String dataBase64,
+    required String contentType,
+  }) async {
+    final response = await _post(
+      isDoctor ? '/api/doctor/avatar' : '/api/patient/avatar',
+      {'dataBase64': dataBase64, 'contentType': contentType},
+    );
+    final url = response['avatar_url'];
+    if (url is! String || url.isEmpty) {
+      throw const ApiException('Le serveur n\'a pas renvoyé d\'image.');
+    }
+    return url;
+  }
+
+  /// Supprime la photo de profil et renvoie false si aucune photo n'existait.
+  static Future<bool> deleteAvatar({required bool isDoctor}) async {
+    await _delete(isDoctor ? '/api/doctor/avatar' : '/api/patient/avatar');
+    return true;
+  }
+
   static Future<void> updatePatientProfile({
     String? firstName,
     String? lastName,

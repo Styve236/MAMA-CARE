@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 import '../shared/app_theme.dart';
+import '../shared/profile_avatar.dart';
 
 class PatienteProfileScreen extends StatefulWidget {
   final Map<String, dynamic>? patienteData;
@@ -13,10 +14,10 @@ class PatienteProfileScreen extends StatefulWidget {
 
 class _PatienteProfileScreenState extends State<PatienteProfileScreen> {
   static const Color burgundy = AppColors.burgundy;
-  static const Color lightBurgundy = Color(0xFFF9E8EC);
 
   bool _loading = true;
   bool _saving = false;
+  String? _avatarUrl;
 
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
@@ -75,6 +76,8 @@ class _PatienteProfileScreenState extends State<PatienteProfileScreen> {
           '${data?['emergency_contact_name'] ?? ''}';
       _emergencyPhoneController.text =
           '${data?['emergency_contact_phone'] ?? ''}';
+      final avatar = data?['avatar_url']?.toString().trim();
+      _avatarUrl = (avatar == null || avatar.isEmpty) ? null : avatar;
       _loading = false;
     });
   }
@@ -147,11 +150,11 @@ class _PatienteProfileScreenState extends State<PatienteProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Center(
-                    child: CircleAvatar(
+                    child: AvatarEditor(
+                      isDoctor: false,
+                      avatarUrl: _avatarUrl,
                       radius: 60,
-                      backgroundColor: lightBurgundy,
-                      child:
-                          const Icon(Icons.person, size: 60, color: burgundy),
+                      onSaved: (url) => setState(() => _avatarUrl = url),
                     ),
                   ),
                   const SizedBox(height: 20),
