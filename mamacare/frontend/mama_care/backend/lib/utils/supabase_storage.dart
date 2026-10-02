@@ -40,10 +40,15 @@ class SupabaseStorage {
     final url = Env.get('SUPABASE_URL');
     final key = Env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (url == null || url.isEmpty || key == null || key.isEmpty) return null;
+    final bucket = Env.get('SUPABASE_STORAGE_BUCKET');
     return SupabaseStorage._(
       url.replaceAll(RegExp(r'/+$'), ''),
       key,
-      Env.get('SUPABASE_STORAGE_BUCKET') ?? defaultBucket,
+      // Une variable presente mais vide ne doit pas produire un bucket vide :
+      // l'URL deviendrait /object//... et Supabase repondrait 404.
+      (bucket == null || bucket.trim().isEmpty)
+          ? defaultBucket
+          : bucket.trim(),
       http.Client(),
     );
   }
@@ -92,10 +97,37 @@ class SupabaseStorage {
         )
         .timeout(const Duration(seconds: 30));
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StorageException(
-          'Le stockage d image a echoue (${response.statusCode}).');
+      throw StorageException(_describe('Enregistrement de l image', response));
     }
     return publicUrl(path);
+  }
+
+  /// Message lisible construit a partir de la reponse Supabase, pour ne plus
+  /// remonter un simple code. Le corps contient generalement
+  /// {"message":"Bucket not found"} ou {"message":"Invalid API key"}.
+  String _describe(String action, http.Response response) {
+    final reason = _extractMessage(response.body);
+    // Journalise pour les logs du serveur. La cle de service n'y figure pas.
+    print(
+      'SupabaseStorage: $action en echec (${response.statusCode}) '
+      'bucket=$_bucket -> ${reason ?? response.body}',
+    );
+    final hint = switch (response.statusCode) {
+      400 || 404 => reason == null
+          ? ' Verifiez que le bucket "$_bucket" existe dans Supabase Storage.'
+          : ' Verifiez le bucket "$_bucket" : $reason',
+      401 || 403 => ' Cle de service Supabase invalide ou sans acces.',
+      _ => '',
+    };
+    return '$action impossible (${response.statusCode}).$hint';
+  }
+
+  String? _extractMessage(String body) {
+    if (body.isEmpty) return null;
+    final match = RegExp(
+      r'"(?:message|error|error_description)"\s*:\s*"([^"]*)"',
+    ).firstMatch(body);
+    return match?.group(1);
   }
 
   Future<void> remove(String path) async {
@@ -106,8 +138,7 @@ class SupabaseStorage {
         })
         .timeout(const Duration(seconds: 30));
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StorageException(
-          'Suppression impossible (${response.statusCode}).');
+      throw StorageException(_describe('Suppression', response));
     }
   }
 }
