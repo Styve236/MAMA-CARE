@@ -145,6 +145,8 @@ class ApiClient {
     String? allergies,
     String? emergencyContactName,
     String? emergencyContactPhone,
+    String? dueDate,
+    double? prePregnancyWeight,
   }) {
     return _patch('/api/patient/profile', {
       'firstName': firstName,
@@ -157,6 +159,8 @@ class ApiClient {
       'allergies': allergies,
       'emergencyContactName': emergencyContactName,
       'emergencyContactPhone': emergencyContactPhone,
+      'dueDate': dueDate,
+      'prePregnancyWeight': prePregnancyWeight,
     });
   }
 

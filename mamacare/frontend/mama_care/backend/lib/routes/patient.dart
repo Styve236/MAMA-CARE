@@ -70,6 +70,8 @@ final _patientRouter = Router()
         (body['emergencyContactName'] as String?)?.trim();
     final emergencyContactPhone =
         (body['emergencyContactPhone'] as String?)?.trim();
+    final dueDate = (body['dueDate'] as String?)?.trim();
+    final prePregnancyWeight = body['prePregnancyWeight'];
 
     final db = Database();
     await db.connect();
@@ -77,7 +79,8 @@ final _patientRouter = Router()
       final info = await db.query('''
         SELECT u.first_name, u.last_name, u.phone, u.email,
                p.pregnancy_weeks, p.blood_type, p.medical_conditions,
-               p.allergies, p.emergency_contact_name, p.emergency_contact_phone
+               p.allergies, p.emergency_contact_name, p.emergency_contact_phone,
+               p.due_date, p.pre_pregnancy_weight
         FROM users u
         JOIN patients p ON p.user_id = u.id
         WHERE u.id = @uid
@@ -116,6 +119,14 @@ final _patientRouter = Router()
           ? cur['emergency_contact_phone']
           : emergencyContactPhone;
 
+      final pwRaw = prePregnancyWeight == null ? '' : '$prePregnancyWeight'.trim();
+      final parsedWeight =
+          pwRaw.isEmpty ? null : double.tryParse(pwRaw.replaceAll(',', '.'));
+      final newPrePregnancyWeight = parsedWeight ?? cur['pre_pregnancy_weight'];
+      final newDueDate = (dueDate == null || dueDate.isEmpty)
+          ? cur['due_date']
+          : (DateTime.tryParse(dueDate) ?? cur['due_date']);
+
       if (newEmail.toString() != cur['email'].toString()) {
         final dup = await db.query(
           'SELECT id FROM users WHERE email = @email AND id != @uid',
@@ -146,7 +157,8 @@ final _patientRouter = Router()
           UPDATE patients
           SET pregnancy_weeks = @pw, blood_type = @bt,
               medical_conditions = @mc, allergies = @al,
-              emergency_contact_name = @ecn, emergency_contact_phone = @ecp
+              emergency_contact_name = @ecn, emergency_contact_phone = @ecp,
+              due_date = @dd, pre_pregnancy_weight = @ppw
           WHERE user_id = @uid
         ''', substitutionValues: {
           'pw': newPregnancyWeeks,
@@ -155,6 +167,8 @@ final _patientRouter = Router()
           'al': newAllergies,
           'ecn': newEmergencyContactName,
           'ecp': newEmergencyContactPhone,
+          'dd': newDueDate,
+          'ppw': newPrePregnancyWeight,
           'uid': uid,
         });
       });

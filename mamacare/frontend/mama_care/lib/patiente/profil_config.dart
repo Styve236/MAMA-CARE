@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:mama_care/patiente/dashboard.dart';
+import '../services/api_client.dart';
 import '../shared/app_theme.dart';
+import '../shared/date_utils.dart';
 
 class ProfilConfig extends StatefulWidget {
   const ProfilConfig({super.key});
@@ -13,10 +15,20 @@ class _ProfilConfigState extends State<ProfilConfig> {
 
   // Contrôleurs et variables d'état
   DateTime? _dueDate;
+  bool _isSaving = false;
   final _weightController = TextEditingController();
   final _historyController = TextEditingController();
   final _emergencyNameController = TextEditingController();
   final _emergencyPhoneController = TextEditingController();
+
+  @override
+  void dispose() {
+    _weightController.dispose();
+    _historyController.dispose();
+    _emergencyNameController.dispose();
+    _emergencyPhoneController.dispose();
+    super.dispose();
+  }
 
   // Fonction pour sélectionner la date d'accouchement
   Future<void> _selectDate(BuildContext context) async {
@@ -161,7 +173,7 @@ class _ProfilConfigState extends State<ProfilConfig> {
             Text(
               _dueDate == null
                   ? "Date prévue d'accouchement"
-                  : "<LaTex>{_dueDate!.day}/</LaTex>{_dueDate!.month}/${_dueDate!.year}",
+                  : formatDayMonthYear(_dueDate!),
               style: TextStyle(
                 color: _dueDate == null ? Colors.grey[600] : Colors.black,
                 fontSize: 16,
@@ -201,33 +213,111 @@ class _ProfilConfigState extends State<ProfilConfig> {
     );
   }
 
+  // Enregistre le profil et redirige vers le dashboard
+  Future<void> _submitProfile() async {
+    if (_dueDate == null) {
+      _showError('Veuillez choisir la date prévue d\'accouchement.');
+      return;
+    }
+
+    final weightRaw = _weightController.text.trim().replaceAll(',', '.');
+    double? weight;
+    if (weightRaw.isNotEmpty) {
+      weight = double.tryParse(weightRaw);
+      if (weight == null || weight < 20 || weight > 300) {
+        _showError('Veuillez saisir un poids valide entre 20 et 300 kg.');
+        return;
+      }
+    }
+
+    final medicalConditions = _historyController.text.trim();
+    final emergencyName = _emergencyNameController.text.trim();
+    final emergencyPhone = _emergencyPhoneController.text.trim();
+
+    if (medicalConditions.isEmpty ||
+        emergencyName.isEmpty ||
+        emergencyPhone.isEmpty) {
+      _showError('Veuillez remplir les antécédents et le contact d\'urgence.');
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final due = _dueDate!;
+      final dueDate =
+          '${due.year.toString().padLeft(4, '0')}-'
+          '${due.month.toString().padLeft(2, '0')}-'
+          '${due.day.toString().padLeft(2, '0')}';
+
+      await ApiClient.updatePatientProfile(
+        medicalConditions: medicalConditions,
+        emergencyContactName: emergencyName,
+        emergencyContactPhone: emergencyPhone,
+        dueDate: dueDate,
+        prePregnancyWeight: weight,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profil enregistré avec succès.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const Dashboard()),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      _showError(error.message);
+    } catch (_) {
+      if (!mounted) return;
+      _showError('Une erreur inattendue est survenue. Réessayez.');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+      ),
+    );
+  }
+
   // Widget pour le bouton de validation
   Widget _buildSubmitButton() {
     return SizedBox(
       width: double.infinity,
       height: 55,
       child: ElevatedButton(
-        onPressed: () {
-          // Logique d'enregistrement et redirection
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const Dashboard()),
-          );
-        },
+        onPressed: _isSaving ? null : _submitProfile,
         style: ElevatedButton.styleFrom(
           backgroundColor: burgundyColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
         ),
-        child: Text(
-          "Terminer l'inscription",
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        child: _isSaving
+            ? const SizedBox(
+                height: 22,
+                width: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation(Colors.white),
+                ),
+              )
+            : const Text(
+                "Terminer l'inscription",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
       ),
     );
   }

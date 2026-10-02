@@ -22,6 +22,14 @@ String _pad(int n) => n.toString().padLeft(2, '0');
 
 DateTime _local(DateTime d) => d.toLocal();
 
+/// "24/09/2026"
+String formatDayMonthYear(Object? value) {
+  final d = _parse(value);
+  if (d == null) return '$value';
+  final local = _local(d);
+  return '${_pad(local.day)}/${_pad(local.month)}/${local.year}';
+}
+
 /// "24 sept. 2026 à 11:45"
 String formatFullDate(Object? value) {
   final d = _parse(value);
