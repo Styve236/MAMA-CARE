@@ -73,6 +73,45 @@ void main() {
     });
   });
 
+  group('Auto-detection mg/dL', () {
+    test('une valeur normale reste en mmol/L', () {
+      expect(glucoseTypedInMgDl(5), isFalse);
+      expect(normalizeGlucoseInput(5), 5.0);
+    });
+
+    test('140 est lu comme des mg/dL', () {
+      expect(glucoseTypedInMgDl(140), isTrue);
+    });
+
+    test('140 mg/dL devient environ 7,8 mmol/L', () {
+      expect(normalizeGlucoseInput(140), closeTo(7.77, 0.01));
+    });
+
+    test('le seuil de 25 reste en mmol/L', () {
+      expect(glucoseTypedInMgDl(25), isFalse);
+    });
+
+    test('juste au-dessus du seuil bascule en mg/dL', () {
+      expect(glucoseTypedInMgDl(25.1), isTrue);
+    });
+
+    test('aller-retour 140 mg/dL conserve la valeur d origine', () {
+      final mmol = normalizeGlucoseInput(140);
+      expect(glucoseToMgDl(mmol).round(), 140);
+    });
+
+    test('140 mg/dL est classe comme elevee, pas critique', () {
+      expect(glucoseStatus(normalizeGlucoseInput(140)), GlucoseStatus.high);
+    });
+
+    test('90 mg/dL est classe comme normale', () {
+      expect(glucoseStatus(normalizeGlucoseInput(90)), GlucoseStatus.normal);
+    });
+
+    test('55 mg/dL est classe comme hypoglycemie', () {
+      expect(glucoseStatus(normalizeGlucoseInput(55)), GlucoseStatus.veryLow);
+    });
+  });
   group('Saisie sans séparateur décimal', () {
     test('un nombre entier tapé au clavier est accepté', () {
       expect(double.tryParse('5'), 5.0);

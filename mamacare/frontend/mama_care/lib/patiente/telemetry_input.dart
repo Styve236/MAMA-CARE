@@ -21,6 +21,7 @@ class _TelemetryInputState extends State<TelemetryInput> {
   bool _isLoading = false;
 
   GlucoseStatus? _glucoseStatus;
+  bool _glucoseTypedMgDl = false;
 
   @override
   void initState() {
@@ -32,15 +33,29 @@ class _TelemetryInputState extends State<TelemetryInput> {
   /// sous la normale, normale ou trop elevee, et on affiche l'equivalent
   /// en mg/dL de son appareil. Aucune saisie n'est refusee ici.
   void _onGlycemiaChanged() {
-    final value = double.tryParse(
+    final typed = double.tryParse(
       _glycemiaController.text.trim().replaceAll(',', '.'),
     );
-    if (value == null || value <= 0) {
-      if (_glucoseStatus != null) setState(() => _glucoseStatus = null);
+    if (typed == null || typed <= 0) {
+      if (_glucoseStatus != null) {
+        setState(() {
+          _glucoseStatus = null;
+          _glucoseTypedMgDl = false;
+        });
+      }
       return;
     }
-    final status = glucoseStatus(value);
-    if (status != _glucoseStatus) setState(() => _glucoseStatus = status);
+    // Une saisie au-dessus du seuil est lue en mg/dL puis ramenee en
+    // mmol/L, qui reste l'unite du systeme.
+    final mmol = normalizeGlucoseInput(typed);
+    final status = glucoseStatus(mmol);
+    final asMgDl = glucoseTypedInMgDl(typed);
+    if (status != _glucoseStatus || asMgDl != _glucoseTypedMgDl) {
+      setState(() {
+        _glucoseStatus = status;
+        _glucoseTypedMgDl = asMgDl;
+      });
+    }
   }
 
   @override
@@ -60,9 +75,12 @@ class _TelemetryInputState extends State<TelemetryInput> {
     final temperature = double.tryParse(
       _tempController.text.trim().replaceAll(',', '.'),
     );
-    final glycemia = double.tryParse(
+    final glycemiaTyped = double.tryParse(
       _glycemiaController.text.trim().replaceAll(',', '.'),
     );
+    // L'API et l'IA travaillent en mmol/L : on y ramene la saisie.
+    final glycemia =
+        glycemiaTyped == null ? null : normalizeGlucoseInput(glycemiaTyped);
     final weight = double.tryParse(
       _weightController.text.trim().replaceAll(',', '.'),
     );
@@ -144,7 +162,7 @@ class _TelemetryInputState extends State<TelemetryInput> {
             _buildSectionTitle("2. TEMPÉRATURE"),
             _buildField(_tempController, "Température", "°C"),
             SizedBox(height: 25),
-            _buildSectionTitle("3. GLYCÉMIE (mmol/L)"),
+            _buildSectionTitle("3. GLYCÉMIE"),
             _buildGlycemiaField(),
             SizedBox(height: 25),
             _buildSectionTitle("4. POIDS"),
@@ -209,10 +227,32 @@ class _TelemetryInputState extends State<TelemetryInput> {
 
   Widget _buildGlycemiaField() {
     final status = _glucoseStatus;
+    final typed = double.tryParse(
+      _glycemiaController.text.trim().replaceAll(',', '.'),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildField(_glycemiaController, "Glycémie", "mmol/L"),
+        if (_glucoseTypedMgDl) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.swap_horiz, size: 18, color: Colors.blueGrey),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Lue en mg/dL : $typed mg/dL = '
+                  '${_trimmed(normalizeGlucoseInput(typed!))} mmol/L',
+                  style: const TextStyle(
+                    color: Colors.blueGrey,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
         if (status != null) ...[
           SizedBox(height: 8),
           Row(
@@ -221,7 +261,8 @@ class _TelemetryInputState extends State<TelemetryInput> {
               SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  ' · ',
+                  '${glucoseStatusLabel(status)} · '
+                  '${glucoseToMgDl(normalizeGlucoseInput(typed!)).round()} mg/dL',
                   style: TextStyle(
                     color: _glucoseColor(status),
                     fontWeight: FontWeight.w600,
@@ -234,6 +275,12 @@ class _TelemetryInputState extends State<TelemetryInput> {
       ],
     );
   }
+
+
+  String _trimmed(double value) =>
+      value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1).replaceAll('.', ',');
 
   Color _glucoseColor(GlucoseStatus status) {
     switch (status) {

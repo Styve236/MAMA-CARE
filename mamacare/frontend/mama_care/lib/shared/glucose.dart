@@ -22,6 +22,20 @@ double glucoseToMgDl(double mmol) => mmol * _mgDlPerMmol;
 /// Convertit une valeur historique stockee en g/L vers le mmol/L.
 double glucoseGlToMmol(double gl) => gl / _glPerMmol;
 
+/// Au-dela de ce seuil, une saisie est forcement en mg/dL.
+///
+/// 25 mmol/L = 450 mg/dL, valeur qu'aucune glicemie realiste n'atteint,
+/// alors que 140 est une valeur mg/dL tres courante (seuil apres repas).
+/// Les deux distributions se recouvrent donc tres peu.
+const double glucoseMgDlThreshold = 25;
+
+/// Vrai si la saisie doit etre lue comme des mg/dL.
+bool glucoseTypedInMgDl(double typed) => typed > glucoseMgDlThreshold;
+
+/// Ramene une saisie utilisateur dans l'unite du systeme (mmol/L).
+double normalizeGlucoseInput(double typed) =>
+    typed > glucoseMgDlThreshold ? typed / _mgDlPerMmol : typed;
+
 enum GlucoseStatus { veryLow, low, normal, high, veryHigh }
 
 GlucoseStatus glucoseStatus(double mmol) {
