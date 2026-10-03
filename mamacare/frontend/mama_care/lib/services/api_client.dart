@@ -479,9 +479,7 @@ class ApiClient {
       rethrow;
     } on FormatException {
       throw const ApiException('Réponse invalide du serveur');
-    } catch (_) {
-      throw const ApiException('Serveur indisponible.');
-    }
+    } catch (error) { throw _networkError(error, 'Serveur indisponible.'); }
   }
 
   static Future<void> _patch(String path, Map<String, dynamic> body) async {
@@ -502,11 +500,9 @@ class ApiClient {
       rethrow;
     } on FormatException {
       throw const ApiException('Réponse invalide du serveur');
-    } catch (_) {
-      throw const ApiException(
+    } catch (error) { throw _networkError(error, 
         'Serveur indisponible. Vérifiez que le backend est démarré.',
-      );
-    }
+      ); }
   }
 
   static Future<Map<String, dynamic>> _patchObject(
@@ -535,11 +531,9 @@ class ApiClient {
       rethrow;
     } on FormatException {
       throw const ApiException('Réponse invalide du serveur');
-    } catch (_) {
-      throw const ApiException(
+    } catch (error) { throw _networkError(error, 
         'Serveur indisponible. Vérifiez que le backend est démarré.',
-      );
-    }
+      ); }
   }
 
   static Future<void> _delete(String path) async {
@@ -559,11 +553,9 @@ class ApiClient {
       rethrow;
     } on FormatException {
       throw const ApiException('Réponse invalide du serveur');
-    } catch (_) {
-      throw const ApiException(
+    } catch (error) { throw _networkError(error, 
         'Serveur indisponible. Vérifiez que le backend est démarré.',
-      );
-    }
+      ); }
   }
 
   static Future<Map<String, dynamic>> _post(
@@ -592,11 +584,9 @@ class ApiClient {
       rethrow;
     } on FormatException {
       throw const ApiException('Réponse invalide du serveur');
-    } catch (_) {
-      throw const ApiException(
+    } catch (error) { throw _networkError(error, 
         'Serveur indisponible. Vérifiez que le backend est démarré.',
-      );
-    }
+      ); }
   }
 
   static void _ensureJsonResponse(http.Response response) {
@@ -604,6 +594,16 @@ class ApiClient {
     if (!contentType.contains('application/json')) {
       throw const ApiException('Le serveur a renvoyé une réponse non JSON');
     }
+  }
+
+  /// Message de reseau exploitable. Le type d'exception est indispensable
+  /// pour distinguer un backend arrete, une requete bloquee par le CORS ou
+  /// un delai depasse : "Serveur indisponible" seul ne permet pas de choisir.
+  static ApiException _networkError(Object error, String fallback) {
+    var detail = error.toString();
+    detail = detail.replaceFirst(RegExp(r'^(Exception|Bad state):\s*'), '');
+    if (detail.length > 140) detail = '${detail.substring(0, 140)}...';
+    return ApiException('$fallback ($detail)');
   }
 
   static String _errorMessage(http.Response response) {

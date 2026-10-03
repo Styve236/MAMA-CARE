@@ -92,6 +92,16 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
           backgroundColor: Colors.red,
         ),
       );
+    } catch (error) {
+      // Sans ce filet, une exception inattendue laissait l'ecran muet et
+      // la patiente pouvait croire que l'enregistrement avait reussi.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Enregistrement impossible : $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
