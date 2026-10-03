@@ -1,12 +1,30 @@
 import 'dart:convert';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
+import 'package:postgres/postgres.dart';
 import 'package:backend/config/database.dart';
 import 'package:backend/utils/jwt.dart';
 import 'package:backend/utils/json_safe.dart';
 import 'package:backend/utils/mistral.dart';
 import 'package:backend/utils/dates_fr.dart';
 import 'package:backend/utils/avatar_upload.dart';
+
+// Traduit les violations de contraintes les plus courantes en francais.
+// Le code SQL de PostgreSQL est stable : 23505 = unicite, 23514 = CHECK.
+String? _erreurSql(PostgreSQLException e) {
+  switch (e.code) {
+    case '23505':
+      return 'Cette valeur existe deja.';
+    case '23514':
+      return 'Valeur hors de la plage autorisee.';
+    case '23502':
+      return 'Un champ obligatoire est manquant.';
+    case '22001':
+      return 'Valeur trop longue.';
+    default:
+      return null;
+  }
+}
 
 Map<String, dynamic>? _extractUser(Request req) {
   final auth = req.headers['authorization'];
@@ -59,20 +77,28 @@ final _patientRouter = Router()
     }
     final body = decoded;
 
-    final firstName = (body['firstName'] as String?)?.trim();
-    final lastName = (body['lastName'] as String?)?.trim();
-    final phone = (body['phone'] as String?)?.trim();
-    final email = (body['email'] as String?)?.trim();
-    final pregnancyWeeks = body['pregnancyWeeks'];
-    final bloodType = (body['bloodType'] as String?)?.trim();
-    final medicalConditions = (body['medicalConditions'] as String?)?.trim();
-    final allergies = (body['allergies'] as String?)?.trim();
-    final emergencyContactName =
-        (body['emergencyContactName'] as String?)?.trim();
-    final emergencyContactPhone =
-        (body['emergencyContactPhone'] as String?)?.trim();
-    final dueDate = (body['dueDate'] as String?)?.trim();
-    final prePregnancyWeight = body['prePregnancyWeight'];
+    // Une cle absente du corps conserve la valeur en base ; une cle presente
+    // mais vide efface le champ. Traiter une chaine vide comme "ne change
+    // rien" rendait impossible de vider un champ depuis le formulaire.
+    String? texte(String cle) {
+      if (!body.containsKey(cle)) return null;
+      final v = body[cle];
+      if (v == null) return '';
+      return '$v'.trim();
+    }
+
+    final firstName = texte('firstName');
+    final lastName = texte('lastName');
+    final phone = texte('phone');
+    final email = texte('email');
+    final pregnancyWeeks = texte('pregnancyWeeks');
+    final bloodType = texte('bloodType');
+    final medicalConditions = texte('medicalConditions');
+    final allergies = texte('allergies');
+    final emergencyContactName = texte('emergencyContactName');
+    final emergencyContactPhone = texte('emergencyContactPhone');
+    final dueDate = texte('dueDate');
+    final prePregnancyWeight = texte('prePregnancyWeight');
 
     final db = Database();
     await db.connect();
@@ -92,43 +118,63 @@ final _patientRouter = Router()
       }
 
       final cur = info.first.toColumnMap();
-      final newFirstName =
-          firstName == null || firstName.isEmpty ? cur['first_name'] : firstName;
-      final newLastName =
-          lastName == null || lastName.isEmpty ? cur['last_name'] : lastName;
-      final newPhone = phone == null || phone.isEmpty ? cur['phone'] : phone;
-      final newEmail =
-          email == null || email.isEmpty ? cur['email'] : email;
-      final newPregnancyWeeks = pregnancyWeeks == null ||
-              '$pregnancyWeeks'.isEmpty
-          ? cur['pregnancy_weeks']
-          : int.tryParse('$pregnancyWeeks');
-      final newBloodType =
-          bloodType == null || bloodType.isEmpty ? cur['blood_type'] : bloodType;
-      final newMedicalConditions = medicalConditions == null ||
-              medicalConditions.isEmpty
-          ? cur['medical_conditions']
-          : medicalConditions;
-      final newAllergies =
-          allergies == null || allergies.isEmpty ? cur['allergies'] : allergies;
-      final newEmergencyContactName = emergencyContactName == null ||
-              emergencyContactName.isEmpty
-          ? cur['emergency_contact_name']
-          : emergencyContactName;
-      final newEmergencyContactPhone = emergencyContactPhone == null ||
-              emergencyContactPhone.isEmpty
-          ? cur['emergency_contact_phone']
-          : emergencyContactPhone;
+      // null = champ absent du corps, on garde l'existant ; chaine vide =
+      // champ volontairement vide, on l'efface.
+      Object? fusion(String? envoye, Object? actuel) =>
+          envoye == null ? actuel : (envoye.isEmpty ? null : envoye);
 
-      final pwRaw = prePregnancyWeight == null ? '' : '$prePregnancyWeight'.trim();
-      final parsedWeight =
-          pwRaw.isEmpty ? null : double.tryParse(pwRaw.replaceAll(',', '.'));
-      final newPrePregnancyWeight = parsedWeight ?? cur['pre_pregnancy_weight'];
-      final newDueDate = (dueDate == null || dueDate.isEmpty)
+      Response erreur(String message) => Response(400,
+          body: jsonEncode({'error': message}),
+          headers: {'content-type': 'application/json'});
+
+      final newFirstName = fusion(firstName, cur['first_name']);
+      final newLastName = fusion(lastName, cur['last_name']);
+      final newPhone = fusion(phone, cur['phone']);
+      final newEmail = fusion(email, cur['email']);
+      final newBloodType = fusion(bloodType, cur['blood_type']);
+      final newMedicalConditions =
+          fusion(medicalConditions, cur['medical_conditions']);
+      final newAllergies = fusion(allergies, cur['allergies']);
+      final newEmergencyContactName =
+          fusion(emergencyContactName, cur['emergency_contact_name']);
+      final newEmergencyContactPhone =
+          fusion(emergencyContactPhone, cur['emergency_contact_phone']);
+
+      Object? newPregnancyWeeks = cur['pregnancy_weeks'];
+      if (pregnancyWeeks != null) {
+        if (pregnancyWeeks.isEmpty) {
+          newPregnancyWeeks = null;
+        } else {
+          final parsed = int.tryParse(pregnancyWeeks);
+          if (parsed == null || parsed < 0 || parsed > 45) {
+            return erreur('Age de grossesse invalide (0 a 45 semaines).');
+          }
+          newPregnancyWeeks = parsed;
+        }
+      }
+
+      Object? newPrePregnancyWeight = cur['pre_pregnancy_weight'];
+      if (prePregnancyWeight != null) {
+        if (prePregnancyWeight.isEmpty) {
+          newPrePregnancyWeight = null;
+        } else {
+          final parsed = double.tryParse(prePregnancyWeight.replaceAll(',', '.'));
+          if (parsed == null || parsed < 20 || parsed > 300) {
+            return erreur('Poids avant grossesse invalide (20 a 300 kg).');
+          }
+          newPrePregnancyWeight = parsed;
+        }
+      }
+
+      final newDueDate = dueDate == null
           ? cur['due_date']
-          : (DateTime.tryParse(dueDate) ?? cur['due_date']);
+          : (dueDate.isEmpty
+              ? null
+              : (DateTime.tryParse(dueDate) ?? cur['due_date']));
 
-      if (newEmail.toString() != cur['email'].toString()) {
+      if (newEmail != null &&
+          '$newEmail'.isNotEmpty &&
+          newEmail.toString() != cur['email'].toString()) {
         final dup = await db.query(
           'SELECT id FROM users WHERE email = @email AND id != @uid',
           substitutionValues: {'email': newEmail, 'uid': uid},
@@ -181,6 +227,13 @@ final _patientRouter = Router()
         WHERE p.user_id = @uid
       ''', substitutionValues: {'uid': uid});
       return Response.ok(jsonEncode(jsonSafe(updated.first.toColumnMap())),
+          headers: {'content-type': 'application/json'});
+    } on PostgreSQLException catch (e) {
+      // Sans ce filet, une violation de contrainte renvoyait un 500
+      // text/plain que l'app ne pouvait pas lire.
+      return Response(400,
+          body: jsonEncode(
+              {'error': _erreurSql(e) ?? 'Enregistrement refuse par la base.'}),
           headers: {'content-type': 'application/json'});
     } finally {
       await db.close();
